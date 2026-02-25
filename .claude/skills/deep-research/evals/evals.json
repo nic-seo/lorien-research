@@ -1,0 +1,23 @@
+{
+  "skill_name": "deep-research",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Can you do a deep dive on the current state of the AI coding agents market? I want to understand who the major players are, how they differentiate, what the business models look like, and where things are heading.",
+      "expected_output": "A comprehensive HTML report covering the AI coding agents competitive landscape, key players, business models, differentiation, and market outlook. Should include inline citations, confidence ratings, key takeaways, and follow-up questions.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "Research context engineering and token space management for LLMs. I want to understand the current best practices for managing context windows effectively — techniques like summarization, RAG, sliding windows, prompt compression, etc. What's working, what's hype, and where is the field heading?",
+      "expected_output": "A comprehensive HTML report covering context engineering techniques, their effectiveness, current state of the art, and future directions. Should include inline citations, confidence ratings, key takeaways, and follow-up questions.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I need a thorough background on Manus — what it is, who's behind it, how it works, how it's positioned relative to other AI agents, and any notable reception or criticisms.",
+      "expected_output": "A comprehensive HTML report profiling Manus AI agent, its founders/team, technical approach, competitive positioning, and public reception. Should include inline citations, confidence ratings, key takeaways, and follow-up questions.",
+      "files": []
+    }
+  ]
+}

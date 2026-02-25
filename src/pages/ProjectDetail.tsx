@@ -1,7 +1,9 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useDoc, useProjectDocs } from '../db/hooks';
+import { createDoc } from '../db';
 import type { Project, Report, Note, Chat, Reference } from '../db/types';
+import { generateReport } from '../lib/api';
 import QueueList from '../components/features/QueueList';
 import Badge from '../components/ui/Badge';
 import TagPill from '../components/ui/TagPill';
@@ -74,7 +76,7 @@ export default function ProjectDetail() {
 
       <div className="tab-content">
         {activeTab === 'reports' && (
-          <ReportsList reports={reports} navigate={navigate} formatDate={formatDate} />
+          <ReportsList reports={reports} navigate={navigate} formatDate={formatDate} projectId={projectId || ''} />
         )}
         {activeTab === 'notes' && (
           <NotesList notes={notes} formatDate={formatDate} />
@@ -99,29 +101,119 @@ function ReportsList({
   reports,
   navigate,
   formatDate,
+  projectId,
 }: {
   reports: Report[];
   navigate: (path: string) => void;
   formatDate: (iso: string) => string;
+  projectId: string;
 }) {
-  if (reports.length === 0) return <div className="empty-state">No reports yet.</div>;
+  const [showForm, setShowForm] = useState(false);
+  const [query, setQuery] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  const handleGenerate = async () => {
+    if (!query.trim() || generating) return;
+    setGenerating(true);
+    setError(null);
+    setElapsed(0);
+
+    // Tick a timer so the user sees progress
+    const timer = setInterval(() => setElapsed(s => s + 1), 1000);
+
+    try {
+      const result = await generateReport(query.trim());
+      await createDoc<Report>('report', {
+        projectId,
+        title: result.title,
+        htmlContent: result.htmlContent,
+        sourceQuery: query.trim(),
+        tags: [],
+      });
+      setQuery('');
+      setShowForm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      clearInterval(timer);
+      setGenerating(false);
+    }
+  };
+
   return (
-    <div className="list">
-      {reports.map(report => (
-        <div
-          key={report._id}
-          className="list-item clickable"
-          onClick={() => navigate(`/report/${report._id}`)}
-        >
-          <div className="list-item-content">
-            <span className="list-item-title">{report.title}</span>
-            {report.sourceQuery && (
-              <span className="list-item-meta">Query: {report.sourceQuery}</span>
-            )}
+    <div>
+      {/* New Report button / form */}
+      {!showForm && !generating && (
+        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+          + New Report
+        </button>
+      )}
+
+      {showForm && !generating && (
+        <div className="report-form">
+          <label className="report-form-label">What would you like to research?</label>
+          <textarea
+            className="report-form-input"
+            placeholder="e.g. What's the current state of quantum computing? Who are the key players and what are the open problems?"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            rows={3}
+            autoFocus
+          />
+          {error && <div className="report-form-error">{error}</div>}
+          <div className="report-form-actions">
+            <button
+              className="btn btn-primary"
+              onClick={handleGenerate}
+              disabled={!query.trim()}
+            >
+              Generate Report
+            </button>
+            <button className="btn" onClick={() => { setShowForm(false); setError(null); }}>
+              Cancel
+            </button>
           </div>
-          <span className="list-item-date">{formatDate(report.updatedAt)}</span>
         </div>
-      ))}
+      )}
+
+      {generating && (
+        <div className="report-generating">
+          <div className="report-generating-spinner" />
+          <div>
+            <div className="report-generating-title">Researching…</div>
+            <div className="report-generating-meta">
+              "{query.length > 60 ? query.slice(0, 60) + '…' : query}" — {elapsed}s elapsed
+            </div>
+            <div className="report-generating-hint">This usually takes 30–60 seconds.</div>
+          </div>
+        </div>
+      )}
+
+      {/* Report list */}
+      {reports.length === 0 && !showForm && !generating && (
+        <div className="empty-state">No reports yet.</div>
+      )}
+      {reports.length > 0 && (
+        <div className="list" style={{ marginTop: showForm || generating ? 0 : 16 }}>
+          {reports.map(report => (
+            <div
+              key={report._id}
+              className="list-item clickable"
+              onClick={() => navigate(`/report/${report._id}`)}
+            >
+              <div className="list-item-content">
+                <span className="list-item-title">{report.title}</span>
+                {report.sourceQuery && (
+                  <span className="list-item-meta">Query: {report.sourceQuery}</span>
+                )}
+              </div>
+              <span className="list-item-date">{formatDate(report.updatedAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

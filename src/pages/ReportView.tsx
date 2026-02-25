@@ -36,7 +36,7 @@ export default function ReportView() {
       <iframe
         ref={iframeRef}
         className="report-iframe"
-        sandbox="allow-same-origin"
+        sandbox="allow-same-origin allow-scripts"
         title={report.title}
       />
     </div>

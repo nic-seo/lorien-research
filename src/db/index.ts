@@ -1,7 +1,7 @@
 import PouchDB from 'pouchdb';
 import PouchDBFind from 'pouchdb-find';
 import { makeId } from '../lib/ulid';
-import type { AnyDoc, BaseDoc, DocType, Link, QueueItem } from './types';
+import type { AnyDoc, DocType, Link, QueueItem } from './types';
 
 PouchDB.plugin(PouchDBFind);
 
