@@ -14,6 +14,7 @@ interface PanelContextValue {
   reportLocation: (panelId: string, path: string) => void;
   getFirstPanelPath: () => string;
   navigatePanel: (path: string) => void;
+  getPanelLocation: (panelId: string) => string;
 }
 
 const PanelContext = createContext<PanelContextValue>({
@@ -25,6 +26,7 @@ const PanelContext = createContext<PanelContextValue>({
   reportLocation: () => {},
   getFirstPanelPath: () => '/',
   navigatePanel: () => {},
+  getPanelLocation: () => '/',
 });
 
 interface PanelProviderProps {
@@ -78,6 +80,11 @@ export function PanelProvider({ initialPath, children }: PanelProviderProps) {
     return '/';
   }, [panels]);
 
+  // Get a specific panel's current path
+  const getPanelLocation = useCallback((panelId: string) => {
+    return locationRefs.current.get(panelId) || '/';
+  }, []);
+
   // Navigate the first panel (used by SearchOverlay)
   const navigatePanel = useCallback((path: string) => {
     // Get the first panel's navigate function
@@ -89,7 +96,7 @@ export function PanelProvider({ initialPath, children }: PanelProviderProps) {
   }, [panels]);
 
   return (
-    <PanelContext.Provider value={{ panels, addPanel, closePanel, registerNavigate, unregisterNavigate, reportLocation, getFirstPanelPath, navigatePanel }}>
+    <PanelContext.Provider value={{ panels, addPanel, closePanel, registerNavigate, unregisterNavigate, reportLocation, getFirstPanelPath, navigatePanel, getPanelLocation }}>
       {children}
     </PanelContext.Provider>
   );

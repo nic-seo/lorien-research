@@ -55,7 +55,7 @@ export default function PanelShell({ panel }: PanelShellProps) {
 
   return (
     <PanelIdContext.Provider value={panel.id}>
-      <div className="panel">
+      <div className="panel" data-panel-id={panel.id}>
         <button
           className="panel-close"
           onClick={() => closePanel(panel.id)}

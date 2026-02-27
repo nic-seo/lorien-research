@@ -1,9 +1,10 @@
 import { useLocation } from 'react-router-dom';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Topbar from './components/layout/Topbar';
 import SearchOverlay from './components/layout/SearchOverlay';
 import PanelShell from './panels/PanelShell';
 import { PanelProvider, usePanels } from './panels/PanelContext';
+import { useExternalLinkInterceptor } from './hooks/useExternalLinkInterceptor';
 
 export default function App() {
   const location = useLocation();
@@ -21,8 +22,11 @@ function AppLayout() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
   });
+  const contentAreaRef = useRef<HTMLDivElement>(null);
 
   const { panels, addPanel, getFirstPanelPath } = usePanels();
+
+  useExternalLinkInterceptor(contentAreaRef);
 
   // Apply theme to <html>
   useEffect(() => {
@@ -64,7 +68,7 @@ function AppLayout() {
           theme={theme}
           onThemeToggle={toggleTheme}
         />
-        <div className="content-area">
+        <div className="content-area" ref={contentAreaRef}>
           {panels.map(panel => (
             <PanelShell key={panel.id} panel={panel} />
           ))}

@@ -1546,7 +1546,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .panel-body:has(.chat-page),
 .panel-body:has(.report-page),
 .panel-body:has(.note-page),
-.panel-body:has(.project-detail-page) {
+.panel-body:has(.project-detail-page),
+.panel-body:has(.embed-page) {
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1956,4 +1957,61 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+/* ===== Embed ===== */
+.embed-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.embed-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  min-height: 36px;
+}
+.embed-url {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.embed-open-external {
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.embed-open-external:hover {
+  color: var(--accent);
+}
+.embed-iframe {
+  flex: 1;
+  border: none;
+  width: 100%;
+  background: white;
+}
+.embed-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.embed-error a {
+  color: var(--link);
+  text-decoration: underline;
 }

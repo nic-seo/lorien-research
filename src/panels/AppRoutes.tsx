@@ -4,6 +4,7 @@ import ProjectDetail from '../pages/ProjectDetail';
 import ReportView from '../pages/ReportView';
 import ChatView from '../components/features/ChatView';
 import NoteView from '../pages/NoteView';
+import EmbedView from '../pages/EmbedView';
 
 export default function AppRoutes() {
   return (
@@ -13,6 +14,7 @@ export default function AppRoutes() {
       <Route path="/project/:projectId/chat/:chatId" element={<ChatView />} />
       <Route path="/project/:projectId/report/:reportId" element={<ReportView />} />
       <Route path="/project/:projectId/note/:noteId" element={<NoteView />} />
+      <Route path="/embed" element={<EmbedView />} />
     </Routes>
   );
 }

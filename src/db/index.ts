@@ -1,7 +1,7 @@
 import PouchDB from 'pouchdb';
 import PouchDBFind from 'pouchdb-find';
 import { makeId } from '../lib/ulid';
-import type { AnyDoc, DocType, Link, QueueItem } from './types';
+import type { AnyDoc, DocType, Link, QueueItem, Reference } from './types';
 
 PouchDB.plugin(PouchDBFind);
 
@@ -15,6 +15,7 @@ async function ensureIndexes() {
   await db.createIndex({ index: { fields: ['type', 'status'] } });
   await db.createIndex({ index: { fields: ['sourceId'] } });
   await db.createIndex({ index: { fields: ['targetId'] } });
+  await db.createIndex({ index: { fields: ['type', 'projectId', 'url'] } });
 }
 
 ensureIndexes().catch(console.error);
@@ -158,6 +159,19 @@ export async function getQueueItems(
 
   const result = await db.find({ selector });
   return result.docs as unknown as QueueItem[];
+}
+
+// --- Reference helpers ---
+
+export async function findReferenceByUrl(
+  projectId: string,
+  url: string
+): Promise<Reference | null> {
+  const result = await db.find({
+    selector: { type: 'reference', projectId, url },
+    limit: 1,
+  });
+  return (result.docs[0] as unknown as Reference) || null;
 }
 
 // --- Link helpers ---
