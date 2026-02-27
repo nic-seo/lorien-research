@@ -1,44 +1,25 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { marked } from 'marked';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import { Markdown } from 'tiptap-markdown';
 import { useDoc } from '../db/hooks';
-import { updateDoc, deleteDoc } from '../db';
+import { updateDoc } from '../db';
 import type { Note } from '../db/types';
 import DocHeader from '../components/features/DocHeader';
 
-marked.setOptions({ breaks: true, gfm: true });
-
 export default function NoteView() {
   const { projectId, noteId } = useParams<{ projectId: string; noteId: string }>();
-  const navigate = useNavigate();
   const { doc: note, loading } = useDoc<Note>(noteId || null);
 
   const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [editingBody, setEditingBody] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const titleRef = useRef('');
+  const contentRef = useRef('');
 
-  // Sync local state when note loads
-  useEffect(() => {
-    if (note) {
-      setTitle(note.title);
-      setContent(note.content);
-      // New empty notes: open body for editing immediately
-      if (note.content === '') {
-        setEditingBody(true);
-      }
-    }
-  }, [note?._id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-resize textarea to fit content
-  useEffect(() => {
-    if (editingBody && textareaRef.current) {
-      const ta = textareaRef.current;
-      ta.style.height = 'auto';
-      ta.style.height = Math.max(200, ta.scrollHeight) + 'px';
-    }
-  }, [editingBody, content]);
+  // Keep refs in sync with state
+  titleRef.current = title;
 
   // Save helper
   const save = useCallback(async (newTitle: string, newContent: string) => {
@@ -49,11 +30,47 @@ export default function NoteView() {
     });
   }, [noteId]);
 
-  // Debounced auto-save while typing
-  const debouncedSave = useCallback((newTitle: string, newContent: string) => {
+  // Debounced save using refs for latest values
+  const scheduleSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => save(newTitle, newContent), 800);
+    saveTimerRef.current = setTimeout(() => {
+      save(titleRef.current, contentRef.current);
+    }, 800);
   }, [save]);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'Start writing...',
+      }),
+      Markdown.configure({
+        html: false,
+        transformPastedText: true,
+        transformCopiedText: true,
+      }),
+    ],
+    editorProps: {
+      attributes: {
+        class: 'note-body',
+      },
+    },
+    onUpdate: ({ editor }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      contentRef.current = (editor.storage as any).markdown.getMarkdown();
+      scheduleSave();
+    },
+  });
+
+  // Sync local state when note loads
+  useEffect(() => {
+    if (note && editor) {
+      setTitle(note.title);
+      titleRef.current = note.title;
+      contentRef.current = note.content;
+      editor.commands.setContent(note.content);
+    }
+  }, [note?._id, editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flush pending save on unmount
   useEffect(() => {
@@ -64,108 +81,48 @@ export default function NoteView() {
 
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);
-    debouncedSave(newTitle, content);
+    titleRef.current = newTitle;
+    scheduleSave();
   };
 
   const handleTitleBlur = () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    save(title, content);
+    save(titleRef.current, contentRef.current);
   };
 
-  const handleContentChange = (newContent: string) => {
-    setContent(newContent);
-    debouncedSave(title, newContent);
-  };
-
-  const handleBodyBlur = () => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    save(title, content);
-    setEditingBody(false);
-  };
-
-  const handleBodyClick = () => {
-    setEditingBody(true);
-  };
-
-  // Focus textarea when entering edit mode
-  useEffect(() => {
-    if (editingBody && textareaRef.current) {
-      textareaRef.current.focus();
+  // Enter in title field focuses the editor
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      editor?.commands.focus('start');
     }
-  }, [editingBody]);
-
-  // Escape exits body editing
-  useEffect(() => {
-    if (!editingBody) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        textareaRef.current?.blur();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [editingBody]);
-
-  const handleDelete = useCallback(async () => {
-    if (!noteId) return;
-    if (!window.confirm('Delete this note?')) return;
-    await deleteDoc(noteId);
-    navigate(-1);
-  }, [noteId, navigate]);
+  };
 
   if (loading) return <div className="page-loading">Loading...</div>;
   if (!note) return <div className="page-loading">Note not found.</div>;
 
   return (
-    <div className="page">
+    <div className="note-page">
       <DocHeader
-        backPath={`/project/${projectId}`}
+        backPath={`/project/${projectId}?tab=notes`}
         docId={noteId}
         docType="note"
         projectId={projectId}
       />
 
-      <div className="note-view-header">
-        <div className="note-view-actions">
-          <button className="btn" onClick={handleDelete}>
-            Delete
-          </button>
-        </div>
-      </div>
-
-      <input
-        type="text"
-        className="note-editor-title"
-        value={title}
-        onChange={e => handleTitleChange(e.target.value)}
-        onBlur={handleTitleBlur}
-        placeholder="Untitled"
-      />
-
-      {editingBody ? (
-        <textarea
-          ref={textareaRef}
-          className="note-editor-textarea"
-          value={content}
-          onChange={e => handleContentChange(e.target.value)}
-          onBlur={handleBodyBlur}
-          placeholder="Start writing... (markdown supported)"
+      <div className="note-scroll">
+        <input
+          type="text"
+          className="note-editor-title"
+          value={title}
+          onChange={e => handleTitleChange(e.target.value)}
+          onBlur={handleTitleBlur}
+          onKeyDown={handleTitleKeyDown}
+          placeholder="Untitled"
         />
-      ) : (
-        <div
-          className="note-body"
-          onClick={handleBodyClick}
-        >
-          {content ? (
-            <div dangerouslySetInnerHTML={{ __html: marked(content) as string }} />
-          ) : (
-            <div className="note-empty-body">
-              Click to start writing...
-            </div>
-          )}
-        </div>
-      )}
+
+        <EditorContent editor={editor} />
+      </div>
     </div>
   );
 }

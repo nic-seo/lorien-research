@@ -1343,58 +1343,51 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 }
 
 /* ===== Note view / editor ===== */
-.note-view-header {
+.note-page {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  animation: fadeIn 0.2s ease;
 }
-.note-view-actions {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.note-title {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-.note-meta {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-bottom: 24px;
+.note-scroll {
+  flex: 1;
+  overflow-y: auto;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 24px 80px;
+  box-sizing: border-box;
 }
 
 .note-body {
   font-size: 13.5px;
   line-height: 1.8;
   color: var(--text);
-  cursor: text;
   min-height: 200px;
-  border-radius: 4px;
-  padding: 14px;
-  transition: background 0.15s;
+  padding: 0;
+  outline: none;
 }
-.note-body:hover {
-  background: var(--border-light);
+.note-body:focus {
+  outline: none;
 }
+.note-body > *:first-child { margin-top: 0; }
 .note-body h1,
 .note-body h2,
 .note-body h3 {
   margin-top: 1.5em;
   margin-bottom: 0.5em;
 }
-.note-body h1 { font-size: 18px; font-weight: 700; }
-.note-body h2 {
-  font-size: 16px;
+.note-body h1 {
+  font-size: 18px;
   font-weight: 700;
-  background-image: linear-gradient(transparent 60%, var(--pink) 60%);
-  background-size: 100% 100%;
-  display: inline;
+  text-decoration: underline;
+  text-decoration-color: var(--pink);
+  text-decoration-thickness: 0.35em;
+  text-underline-offset: -0.1em;
+  text-decoration-skip-ink: none;
 }
+.note-body h2 { font-size: 16px; font-weight: 700; }
 .note-body h3 {
   font-size: 14px;
   font-weight: 600;
@@ -1402,12 +1395,21 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   padding-left: 10px;
 }
 .note-body p { margin-bottom: 0.75em; }
+.note-body p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-secondary);
+  font-style: italic;
+  pointer-events: none;
+  height: 0;
+}
 .note-body ul,
 .note-body ol {
   margin-bottom: 0.75em;
   padding-left: 1.5em;
 }
 .note-body li { margin-bottom: 0.25em; }
+.note-body li p { margin-bottom: 0; }
 .note-body code {
   background: var(--border-light);
   padding: 1px 5px;
@@ -1484,33 +1486,6 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   border-bottom-color: var(--accent);
 }
 
-.note-editor-textarea {
-  width: 100%;
-  min-height: 200px;
-  padding: 14px;
-  background: var(--border-light);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 13.5px;
-  font-family: inherit;
-  color: var(--text);
-  line-height: 1.8;
-  resize: none;
-  outline: none;
-  overflow: hidden;
-  transition: border-color 0.15s;
-}
-.note-editor-textarea:focus {
-  border-color: var(--accent);
-}
-
-.note-empty-body {
-  color: var(--text-secondary);
-  font-style: italic;
-  font-size: 13px;
-  padding: 14px;
-}
-
 /* ===== Panels ===== */
 /* ===== Panels ===== */
 .panel {
@@ -1570,6 +1545,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 }
 .panel-body:has(.chat-page),
 .panel-body:has(.report-page),
+.panel-body:has(.note-page),
 .panel-body:has(.project-detail-page) {
   overflow: hidden;
   display: flex;
@@ -1621,6 +1597,10 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .content-area:has(.panel:only-child) .project-detail-scroll {
   max-width: 900px;
   padding: 0 32px 120px;
+}
+.content-area:has(.panel:only-child) .note-scroll {
+  max-width: 900px;
+  padding: 32px 32px 120px;
 }
 
 /* ===== Chat ===== */

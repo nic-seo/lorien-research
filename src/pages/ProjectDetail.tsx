@@ -294,6 +294,10 @@ function NotesList({
               </span>
             </div>
             <span className="list-item-date">{formatDate(note.updatedAt)}</span>
+            <ConfirmDeleteButton
+              onConfirm={() => deleteDoc(note._id)}
+              size={14}
+            />
           </div>
         ))}
       </div>
