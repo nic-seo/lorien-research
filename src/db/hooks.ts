@@ -1,6 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getDoc, getDocsByType, getProjectDocs, getQueueItems, onChange } from './index';
-import type { AnyDoc, DocType, QueueItem } from './types';
+import { getDoc, getDocsByType, getProjectDocs, getQueueItems, getLinksFor, onChange } from './index';
+import type { AnyDoc, DocType, Link, QueueItem } from './types';
+
+export interface ResolvedLink {
+  linkId: string;
+  docId: string;
+  docType: DocType;
+  title: string;
+  projectId: string | null;
+}
 
 // Single document hook
 export function useDoc<T extends AnyDoc>(id: string | null) {
@@ -11,7 +19,6 @@ export function useDoc<T extends AnyDoc>(id: string | null) {
   const refresh = useCallback(async () => {
     if (!id) { setDoc(null); setLoading(false); return; }
     try {
-      setLoading(true);
       const result = await getDoc<T>(id);
       setDoc(result);
       setError(null);
@@ -23,9 +30,10 @@ export function useDoc<T extends AnyDoc>(id: string | null) {
     }
   }, [id]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  // Initial load (show loading spinner)
+  useEffect(() => { setLoading(true); refresh(); }, [refresh]);
 
-  // Re-fetch on database changes
+  // Re-fetch on database changes (silent — no loading flash)
   useEffect(() => {
     return onChange(() => { if (id) refresh(); });
   }, [id, refresh]);
@@ -40,7 +48,6 @@ export function useDocs<T extends AnyDoc>(type: DocType) {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       const result = await getDocsByType<T>(type);
       setDocs(result);
     } catch (err) {
@@ -50,7 +57,7 @@ export function useDocs<T extends AnyDoc>(type: DocType) {
     }
   }, [type]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { setLoading(true); refresh(); }, [refresh]);
   useEffect(() => onChange(refresh), [refresh]);
 
   return { docs, loading, refresh };
@@ -64,7 +71,6 @@ export function useProjectDocs<T extends AnyDoc>(type: DocType, projectId: strin
   const refresh = useCallback(async () => {
     if (!projectId) { setDocs([]); setLoading(false); return; }
     try {
-      setLoading(true);
       const result = await getProjectDocs<T>(type, projectId);
       setDocs(result);
     } catch (err) {
@@ -74,7 +80,7 @@ export function useProjectDocs<T extends AnyDoc>(type: DocType, projectId: strin
     }
   }, [type, projectId]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { setLoading(true); refresh(); }, [refresh]);
   useEffect(() => onChange(refresh), [refresh]);
 
   return { docs, loading, refresh };
@@ -88,7 +94,6 @@ export function useQueue(projectId: string | null, status?: 'open' | 'done') {
   const refresh = useCallback(async () => {
     if (!projectId) { setItems([]); setLoading(false); return; }
     try {
-      setLoading(true);
       const result = await getQueueItems(projectId, status);
       setItems(result);
     } catch (err) {
@@ -98,8 +103,47 @@ export function useQueue(projectId: string | null, status?: 'open' | 'done') {
     }
   }, [projectId, status]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { setLoading(true); refresh(); }, [refresh]);
   useEffect(() => onChange(refresh), [refresh]);
 
   return { items, loading, refresh };
+}
+
+// Linked documents hook — resolves the "other side" of each link
+export function useLinks(docId: string | null) {
+  const [links, setLinks] = useState<ResolvedLink[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    if (!docId) { setLinks([]); setLoading(false); return; }
+    try {
+      const rawLinks = await getLinksFor(docId);
+      const resolved = await Promise.all(
+        rawLinks.map(async (link: Link) => {
+          // Determine which side is the "other" document
+          const otherId = link.sourceId === docId ? link.targetId : link.sourceId;
+          const otherType = link.sourceId === docId ? link.targetType : link.sourceType;
+          try {
+            const doc = await getDoc<AnyDoc>(otherId);
+            const title = 'title' in doc ? (doc as { title: string }).title : otherId;
+            const projectId = 'projectId' in doc ? (doc as { projectId: string | null }).projectId : null;
+            return { linkId: link._id, docId: otherId, docType: otherType, title, projectId };
+          } catch {
+            // Document may have been deleted
+            return null;
+          }
+        })
+      );
+      setLinks(resolved.filter(Boolean) as ResolvedLink[]);
+    } catch (err) {
+      console.error('Failed to load links:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [docId]);
+
+  useEffect(() => { setLoading(true); refresh(); }, [refresh]);
+  useEffect(() => onChange(refresh), [refresh]);
+
+  return { links, loading, refresh };
 }

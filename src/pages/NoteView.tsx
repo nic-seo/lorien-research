@@ -4,11 +4,12 @@ import { marked } from 'marked';
 import { useDoc } from '../db/hooks';
 import { updateDoc, deleteDoc } from '../db';
 import type { Note } from '../db/types';
+import DocHeader from '../components/features/DocHeader';
 
 marked.setOptions({ breaks: true, gfm: true });
 
 export default function NoteView() {
-  const { noteId } = useParams<{ noteId: string }>();
+  const { projectId, noteId } = useParams<{ projectId: string; noteId: string }>();
   const navigate = useNavigate();
   const { doc: note, loading } = useDoc<Note>(noteId || null);
 
@@ -108,13 +109,6 @@ export default function NoteView() {
     navigate(-1);
   }, [noteId, navigate]);
 
-  const handleBack = useCallback(() => {
-    if (dirty) {
-      if (!window.confirm('You have unsaved changes. Discard them?')) return;
-    }
-    navigate(-1);
-  }, [dirty, navigate]);
-
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', {
       month: 'short',
@@ -129,10 +123,14 @@ export default function NoteView() {
 
   return (
     <div className="page">
+      <DocHeader
+        backPath={`/project/${projectId}`}
+        docId={noteId}
+        docType="note"
+        projectId={projectId}
+      />
+
       <div className="note-view-header">
-        <button className="btn" onClick={handleBack}>
-          &larr; Back
-        </button>
         <div className="note-view-actions">
           {editing ? (
             <>

@@ -300,16 +300,6 @@ body {
   flex-wrap: wrap;
   align-items: center;
 }
-.hero-tag {
-  padding: 2px 10px;
-  border-radius: 2px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-.hero-tag.t-pink { background: var(--pink-light); color: #a06078; border-bottom: 2px solid var(--pink); }
-.hero-tag.t-green { background: var(--green-light); color: #5a8a6a; border-bottom: 2px solid var(--green); }
-.hero-tag.t-blue { background: var(--blue-light); color: #5878a0; border-bottom: 2px solid var(--blue); }
 .hero-meta .sep { color: var(--border); }
 
 /* Sections */
@@ -643,10 +633,6 @@ Every report must follow this skeleton. Adapt the section content but preserve t
         <h1>[Report Title]</h1>
         <p class="hero-subtitle">[One-line description of the research topic and scope]</p>
         <div class="hero-meta">
-          <span class="hero-tag t-pink">[Tag 1]</span>
-          <span class="hero-tag t-green">[Tag 2]</span>
-          <span class="hero-tag t-blue">[Tag 3]</span>
-          <span class="sep">·</span>
           <span>compiled [month] [year]</span>
         </div>
       </div>
@@ -897,6 +883,5 @@ Use these components contextually in the adaptive middle sections:
 
 - Always include the Google Fonts link for IBM Plex Mono in the `<head>`
 - The full CSS, HTML structure, and JavaScript must be included in every report — reports must be fully self-contained
-- Hero tags should use `t-pink`, `t-green`, and `t-blue` classes — pick 3 relevant topic tags
 - The topbar subtitle should always read `research · [month] [year]`
 - Keep the same search and dark mode JavaScript in every report

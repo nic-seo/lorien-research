@@ -1,12 +1,14 @@
-import { useParams, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
 import { useDoc, useProjectDocs } from '../db/hooks';
-import { createDoc } from '../db';
+import { createDoc, deleteDoc, deleteReport } from '../db';
 import type { Project, Report, Note, Chat, Reference } from '../db/types';
 import { generateReport } from '../lib/api';
 import QueueList from '../components/features/QueueList';
+import DocHeader from '../components/features/DocHeader';
 import Badge from '../components/ui/Badge';
-import TagPill from '../components/ui/TagPill';
+import ConfirmDeleteButton from '../components/ui/ConfirmDeleteButton';
+import { usePanelNavigate } from '../panels/usePanelNavigate';
 
 type Tab = 'reports' | 'notes' | 'chats' | 'references' | 'queue';
 
@@ -20,14 +22,40 @@ const TAB_CONFIG: { key: Tab; label: string; badge: 'pink' | 'green' | 'blue' | 
 
 export default function ProjectDetail() {
   const { projectId } = useParams<{ projectId: string }>();
-  const navigate = useNavigate();
+  const panelNavigate = usePanelNavigate();
+  const [searchParams] = useSearchParams();
   const { doc: project, loading } = useDoc<Project>(projectId || null);
-  const [activeTab, setActiveTab] = useState<Tab>('reports');
+  const initialTab = (searchParams.get('tab') as Tab | null) ?? 'reports';
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
 
   const { docs: reports } = useProjectDocs<Report>('report', projectId || null);
   const { docs: notes } = useProjectDocs<Note>('note', projectId || null);
   const { docs: chats } = useProjectDocs<Chat>('chat', projectId || null);
   const { docs: refs } = useProjectDocs<Reference>('reference', projectId || null);
+
+  // Tab key cycles between tabs (only when no input/textarea is focused)
+  const cycleTab = useCallback((direction: 1 | -1) => {
+    setActiveTab(prev => {
+      const idx = TAB_CONFIG.findIndex(t => t.key === prev);
+      const next = (idx + direction + TAB_CONFIG.length) % TAB_CONFIG.length;
+      return TAB_CONFIG[next].key;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't intercept Tab when user is typing in an input or textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        cycleTab(e.shiftKey ? -1 : 1);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [cycleTab]);
 
   if (loading) return <div className="page-loading">Loading…</div>;
   if (!project) return <div className="page-loading">Project not found.</div>;
@@ -44,52 +72,53 @@ export default function ProjectDetail() {
   };
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">{project.title}</h2>
-          {project.description && <p className="page-description">{project.description}</p>}
-          {project.tags.length > 0 && (
-            <div className="page-tags">
-              {project.tags.map(tag => (
-                <TagPill key={tag} label={tag} color="lavender" />
-              ))}
-            </div>
+    <div className="project-detail-page">
+      <DocHeader backPath="/" backLabel="Projects" />
+      <div className="project-detail-scroll">
+        <div className="page-header">
+          <div>
+            <h2 className="page-title">{project.title}</h2>
+            {project.description && <p className="page-description">{project.description}</p>}
+          </div>
+        </div>
+
+        <div className="tabs">
+          {TAB_CONFIG.map(tab => (
+            <button
+              key={tab.key}
+              className={`tab ${activeTab === tab.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+              {tabCounts[tab.key] > 0 && (
+                <span className={`tab-count badge-${tab.badge}`}>{tabCounts[tab.key]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="tab-content">
+          {activeTab === 'reports' && (
+            <ReportsList reports={reports} panelNavigate={panelNavigate} formatDate={formatDate} projectId={projectId || ''} />
+          )}
+          {activeTab === 'notes' && (
+            <NotesList notes={notes} formatDate={formatDate} panelNavigate={panelNavigate} projectId={projectId || ''} />
+          )}
+          {activeTab === 'chats' && (
+            <ChatsList
+              chats={chats}
+              formatDate={formatDate}
+              projectId={projectId || ''}
+              panelNavigate={panelNavigate}
+            />
+          )}
+          {activeTab === 'references' && (
+            <ReferencesList refs={refs} formatDate={formatDate} />
+          )}
+          {activeTab === 'queue' && projectId && (
+            <QueueList projectId={projectId} />
           )}
         </div>
-      </div>
-
-      <div className="tabs">
-        {TAB_CONFIG.map(tab => (
-          <button
-            key={tab.key}
-            className={`tab ${activeTab === tab.key ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.label}
-            {tabCounts[tab.key] > 0 && (
-              <span className={`tab-count badge-${tab.badge}`}>{tabCounts[tab.key]}</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div className="tab-content">
-        {activeTab === 'reports' && (
-          <ReportsList reports={reports} navigate={navigate} formatDate={formatDate} projectId={projectId || ''} />
-        )}
-        {activeTab === 'notes' && (
-          <NotesList notes={notes} formatDate={formatDate} navigate={navigate} projectId={projectId || ''} />
-        )}
-        {activeTab === 'chats' && (
-          <ChatsList chats={chats} formatDate={formatDate} />
-        )}
-        {activeTab === 'references' && (
-          <ReferencesList refs={refs} formatDate={formatDate} />
-        )}
-        {activeTab === 'queue' && projectId && (
-          <QueueList projectId={projectId} />
-        )}
       </div>
     </div>
   );
@@ -99,12 +128,12 @@ export default function ProjectDetail() {
 
 function ReportsList({
   reports,
-  navigate,
+  panelNavigate,
   formatDate,
   projectId,
 }: {
   reports: Report[];
-  navigate: (path: string) => void;
+  panelNavigate: (path: string, event?: React.MouseEvent) => void;
   formatDate: (iso: string) => string;
   projectId: string;
 }) {
@@ -130,7 +159,6 @@ function ReportsList({
         title: result.title,
         htmlContent: result.htmlContent,
         sourceQuery: query.trim(),
-        tags: [],
       });
       setQuery('');
       setShowForm(false);
@@ -191,26 +219,28 @@ function ReportsList({
         </div>
       )}
 
-      {/* Report list */}
+      {/* Report cards */}
       {reports.length === 0 && !showForm && !generating && (
         <div className="empty-state">No reports yet.</div>
       )}
       {reports.length > 0 && (
-        <div className="list" style={{ marginTop: showForm || generating ? 0 : 16 }}>
+        <div className="report-card-grid" style={{ marginTop: showForm || generating ? 0 : 16 }}>
           {reports.map(report => (
-            <div
+            <button
               key={report._id}
-              className="list-item clickable"
-              onClick={() => navigate(`/report/${report._id}`)}
+              className="report-card"
+              onClick={(e) => panelNavigate(`/project/${projectId}/report/${report._id}`, e)}
             >
-              <div className="list-item-content">
-                <span className="list-item-title">{report.title}</span>
-                {report.sourceQuery && (
-                  <span className="list-item-meta">Query: {report.sourceQuery}</span>
-                )}
-              </div>
-              <span className="list-item-date">{formatDate(report.updatedAt)}</span>
-            </div>
+              <ConfirmDeleteButton
+                onConfirm={() => deleteReport(report._id)}
+                size={14}
+              />
+              <h4 className="report-card-title">{report.title}</h4>
+              {report.sourceQuery && (
+                <p className="report-card-query">{report.sourceQuery}</p>
+              )}
+              <div className="report-card-date">{formatDate(report.createdAt)}</div>
+            </button>
           ))}
         </div>
       )}
@@ -221,12 +251,12 @@ function ReportsList({
 function NotesList({
   notes,
   formatDate,
-  navigate,
+  panelNavigate,
   projectId,
 }: {
   notes: Note[];
   formatDate: (iso: string) => string;
-  navigate: (path: string) => void;
+  panelNavigate: (path: string, event?: React.MouseEvent) => void;
   projectId: string;
 }) {
   const [showForm, setShowForm] = useState(false);
@@ -242,7 +272,7 @@ function NotesList({
     });
     setNewTitle('');
     setShowForm(false);
-    navigate(`/note/${doc._id}`);
+    panelNavigate(`/project/${projectId}/note/${doc._id}`);
   };
 
   return (
@@ -285,9 +315,8 @@ function NotesList({
         {notes.map(note => (
           <div
             key={note._id}
-            className="list-item"
-            style={{ cursor: 'pointer' }}
-            onClick={() => navigate(`/note/${note._id}`)}
+            className="list-item clickable"
+            onClick={(e) => panelNavigate(`/project/${projectId}/note/${note._id}`, e)}
           >
             <div className="list-item-content">
               <span className="list-item-title">{note.title}</span>
@@ -304,19 +333,56 @@ function NotesList({
   );
 }
 
-function ChatsList({ chats, formatDate }: { chats: Chat[]; formatDate: (iso: string) => string }) {
-  if (chats.length === 0) return <div className="empty-state">No chats yet.</div>;
+function ChatsList({
+  chats,
+  formatDate,
+  projectId,
+  panelNavigate,
+}: {
+  chats: Chat[];
+  formatDate: (iso: string) => string;
+  projectId: string;
+  panelNavigate: (path: string, event?: React.MouseEvent) => void;
+}) {
+  const handleNewChat = async () => {
+    const doc = await createDoc<Chat>('chat', {
+      projectId,
+      title: 'New chat',
+      messages: [],
+    });
+    panelNavigate(`/project/${projectId}/chat/${doc._id}`);
+  };
+
   return (
-    <div className="list">
-      {chats.map(chat => (
-        <div key={chat._id} className="list-item">
-          <div className="list-item-content">
-            <span className="list-item-title">{chat.title}</span>
-            <span className="list-item-meta">{chat.messages.length} messages</span>
-          </div>
-          <span className="list-item-date">{formatDate(chat.updatedAt)}</span>
+    <div>
+      <button className="btn btn-primary" onClick={handleNewChat}>
+        + New Chat
+      </button>
+
+      {chats.length === 0 && (
+        <div className="empty-state">No chats yet.</div>
+      )}
+      {chats.length > 0 && (
+        <div className="list" style={{ marginTop: 16 }}>
+          {chats.map(chat => (
+            <div
+              key={chat._id}
+              className="list-item clickable"
+              onClick={(e) => panelNavigate(`/project/${projectId}/chat/${chat._id}`, e)}
+            >
+              <div className="list-item-content">
+                <span className="list-item-title">{chat.title}</span>
+                <span className="list-item-meta">{chat.messages.length} messages</span>
+              </div>
+              <span className="list-item-date">{formatDate(chat.updatedAt)}</span>
+              <ConfirmDeleteButton
+                onConfirm={() => deleteDoc(chat._id)}
+                size={14}
+              />
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
