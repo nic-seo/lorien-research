@@ -3,6 +3,7 @@ import { deleteProject } from '../../db';
 import type { Project, Report, Note, Chat, Reference } from '../../db/types';
 import ConfirmDeleteButton from '../ui/ConfirmDeleteButton';
 import { usePanelNavigate } from '../../panels/usePanelNavigate';
+import { projectColor } from '../../lib/projectColor';
 
 interface ProjectCardProps {
   project: Project;
@@ -24,7 +25,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
   ];
 
   return (
-    <div className="card" onClick={(e) => panelNavigate(`/project/${project._id}`, e)}>
+    <div className={`card card-${projectColor(project._id)}`} onClick={(e) => panelNavigate(`/project/${project._id}`, e)}>
       <div className="card-header">
         <h3 className="card-title">{project.title}</h3>
         <ConfirmDeleteButton onConfirm={() => deleteProject(project._id)} />

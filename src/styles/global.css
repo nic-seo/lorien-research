@@ -256,10 +256,10 @@ h3.subsection-title {
   height: 3px;
   border-radius: 6px 6px 0 0;
 }
-.card:nth-child(4n+1)::before { background: var(--pink); }
-.card:nth-child(4n+2)::before { background: var(--blue); }
-.card:nth-child(4n+3)::before { background: var(--yellow); }
-.card:nth-child(4n)::before { background: var(--green); }
+.card.card-pink::before   { background: var(--pink); }
+.card.card-blue::before   { background: var(--blue); }
+.card.card-yellow::before { background: var(--yellow); }
+.card.card-green::before  { background: var(--green); }
 .card-label {
   font-size: 10px;
   font-weight: 600;
@@ -410,12 +410,40 @@ h3.subsection-title {
   font-family: inherit;
   transition: all 0.15s;
 }
-.tab:hover { color: var(--accent); }
-.tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
-}
+.tab.active { font-weight: 600; }
+
+/* Color-coordinated tab active + hover states */
+.tab.tab-color-pink:hover,
+.tab.tab-color-pink.active  { color: #a06078; }
+.tab.tab-color-pink.active  { border-bottom-color: var(--pink); }
+
+.tab.tab-color-green:hover,
+.tab.tab-color-green.active { color: #5a8a6a; }
+.tab.tab-color-green.active { border-bottom-color: var(--green); }
+
+.tab.tab-color-blue:hover,
+.tab.tab-color-blue.active  { color: #5878a0; }
+.tab.tab-color-blue.active  { border-bottom-color: var(--blue); }
+
+.tab.tab-color-coral:hover,
+.tab.tab-color-coral.active { color: #8a6050; }
+.tab.tab-color-coral.active { border-bottom-color: var(--coral); }
+
+.tab.tab-color-yellow:hover,
+.tab.tab-color-yellow.active { color: #8a7a40; }
+.tab.tab-color-yellow.active { border-bottom-color: var(--yellow); }
+
+/* Dark mode: use the brighter base color vars for readability */
+[data-theme="dark"] .tab.tab-color-pink:hover,
+[data-theme="dark"] .tab.tab-color-pink.active  { color: var(--pink); }
+[data-theme="dark"] .tab.tab-color-green:hover,
+[data-theme="dark"] .tab.tab-color-green.active { color: var(--green); }
+[data-theme="dark"] .tab.tab-color-blue:hover,
+[data-theme="dark"] .tab.tab-color-blue.active  { color: var(--blue); }
+[data-theme="dark"] .tab.tab-color-coral:hover,
+[data-theme="dark"] .tab.tab-color-coral.active { color: var(--coral); }
+[data-theme="dark"] .tab.tab-color-yellow:hover,
+[data-theme="dark"] .tab.tab-color-yellow.active { color: var(--yellow); }
 
 /* ===== Search overlay ===== */
 .search-overlay {
@@ -483,6 +511,19 @@ h3.subsection-title {
   border-color: var(--accent);
 }
 .btn-primary:hover { opacity: 0.9; color: #fff; }
+
+/* Color-coordinated primary buttons inside tab content */
+.tab-content-pink .btn-primary  { background: #a06078; border-color: #a06078; }
+.tab-content-green .btn-primary { background: #5a8a6a; border-color: #5a8a6a; }
+.tab-content-blue .btn-primary  { background: #5878a0; border-color: #5878a0; }
+.tab-content-coral .btn-primary { background: #8a6050; border-color: #8a6050; }
+.tab-content-yellow .btn-primary { background: #8a7a40; border-color: #8a7a40; }
+
+[data-theme="dark"] .tab-content-pink .btn-primary  { background: var(--pink); border-color: var(--pink); color: #1a1a2e; }
+[data-theme="dark"] .tab-content-green .btn-primary { background: var(--green); border-color: var(--green); color: #1a1a2e; }
+[data-theme="dark"] .tab-content-blue .btn-primary  { background: var(--blue); border-color: var(--blue); color: #1a1a2e; }
+[data-theme="dark"] .tab-content-coral .btn-primary { background: var(--coral); border-color: var(--coral); color: #1a1a2e; }
+[data-theme="dark"] .tab-content-yellow .btn-primary { background: var(--yellow); border-color: var(--yellow); color: #1a1a2e; }
 
 /* ===== Empty states ===== */
 .empty-state {
@@ -722,6 +763,11 @@ h3.subsection-title {
   background-repeat: no-repeat;
   padding: 0 2px;
 }
+.page-title.title-pink   { background-image: linear-gradient(transparent 60%, var(--pink) 60%); }
+.page-title.title-blue   { background-image: linear-gradient(transparent 60%, var(--blue) 60%); }
+.page-title.title-yellow { background-image: linear-gradient(transparent 60%, var(--yellow) 60%); }
+.page-title.title-green  { background-image: linear-gradient(transparent 60%, var(--green) 60%); }
+
 .page-description {
   font-size: 13px;
   color: var(--text-secondary);
@@ -922,65 +968,6 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   border-radius: 6px;
   padding: 18px;
   margin-bottom: 24px;
-}
-
-/* ===== Report index cards ===== */
-.report-card-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.report-card {
-  position: relative;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 16px 18px 14px;
-  text-align: left;
-  cursor: pointer;
-  font-family: inherit;
-  transition: box-shadow 0.15s, border-color 0.15s;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.report-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  border-radius: 6px 6px 0 0;
-  background: var(--pink);
-}
-.report-card:hover {
-  box-shadow: var(--shadow-lg);
-  border-color: var(--accent);
-}
-.report-card-title {
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--text);
-  margin: 0;
-  line-height: 1.4;
-}
-.report-card-query {
-  font-size: 11.5px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.report-card-date {
-  font-size: 10.5px;
-  color: var(--text-secondary);
-  margin-top: auto;
-  padding-top: 6px;
-}
-@media (max-width: 900px) {
-  .report-card-grid { grid-template-columns: 1fr; }
 }
 
 /* ===== Project detail page ===== */
@@ -1210,8 +1197,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   flex-shrink: 0;
   opacity: 0;
 }
-.card:hover .btn-delete,
-.report-card:hover .btn-delete {
+.card:hover .btn-delete {
   opacity: 1;
 }
 .btn-delete:hover {
@@ -1243,13 +1229,6 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   gap: 4px;
   flex-shrink: 0;
 }
-.report-card > .btn-delete {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 1;
-}
-
 /* ===== Report generation form ===== */
 .report-form {
   background: var(--surface);

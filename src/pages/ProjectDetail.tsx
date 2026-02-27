@@ -9,6 +9,7 @@ import DocHeader from '../components/features/DocHeader';
 import Badge from '../components/ui/Badge';
 import ConfirmDeleteButton from '../components/ui/ConfirmDeleteButton';
 import { usePanelNavigate } from '../panels/usePanelNavigate';
+import { projectColor } from '../lib/projectColor';
 
 type Tab = 'reports' | 'notes' | 'chats' | 'references' | 'queue';
 
@@ -16,8 +17,8 @@ const TAB_CONFIG: { key: Tab; label: string; badge: 'pink' | 'green' | 'blue' | 
   { key: 'reports', label: 'Reports', badge: 'pink' },
   { key: 'notes', label: 'Notes', badge: 'green' },
   { key: 'chats', label: 'Chats', badge: 'blue' },
-  { key: 'references', label: 'References', badge: 'yellow' },
-  { key: 'queue', label: 'Queue', badge: 'coral' },
+  { key: 'references', label: 'References', badge: 'coral' },
+  { key: 'queue', label: 'Queue', badge: 'yellow' },
 ];
 
 export default function ProjectDetail() {
@@ -77,7 +78,7 @@ export default function ProjectDetail() {
       <div className="project-detail-scroll">
         <div className="page-header">
           <div>
-            <h2 className="page-title">{project.title}</h2>
+            <h2 className={`page-title title-${projectColor(projectId || '')}`}>{project.title}</h2>
             {project.description && <p className="page-description">{project.description}</p>}
           </div>
         </div>
@@ -86,7 +87,7 @@ export default function ProjectDetail() {
           {TAB_CONFIG.map(tab => (
             <button
               key={tab.key}
-              className={`tab ${activeTab === tab.key ? 'active' : ''}`}
+              className={`tab tab-color-${tab.badge} ${activeTab === tab.key ? 'active' : ''}`}
               onClick={() => setActiveTab(tab.key)}
             >
               {tab.label}
@@ -97,7 +98,7 @@ export default function ProjectDetail() {
           ))}
         </div>
 
-        <div className="tab-content">
+        <div className={`tab-content tab-content-${TAB_CONFIG.find(t => t.key === activeTab)?.badge}`}>
           {activeTab === 'reports' && (
             <ReportsList reports={reports} panelNavigate={panelNavigate} formatDate={formatDate} projectId={projectId || ''} />
           )}
@@ -219,28 +220,29 @@ function ReportsList({
         </div>
       )}
 
-      {/* Report cards */}
       {reports.length === 0 && !showForm && !generating && (
         <div className="empty-state">No reports yet.</div>
       )}
       {reports.length > 0 && (
-        <div className="report-card-grid" style={{ marginTop: showForm || generating ? 0 : 16 }}>
+        <div className="list" style={{ marginTop: showForm || generating ? 0 : 16 }}>
           {reports.map(report => (
-            <button
+            <div
               key={report._id}
-              className="report-card"
+              className="list-item clickable"
               onClick={(e) => panelNavigate(`/project/${projectId}/report/${report._id}`, e)}
             >
+              <div className="list-item-content">
+                <span className="list-item-title">{report.title}</span>
+                {report.sourceQuery && (
+                  <span className="list-item-meta">{report.sourceQuery}</span>
+                )}
+              </div>
+              <span className="list-item-date">{formatDate(report.createdAt)}</span>
               <ConfirmDeleteButton
                 onConfirm={() => deleteReport(report._id)}
                 size={14}
               />
-              <h4 className="report-card-title">{report.title}</h4>
-              {report.sourceQuery && (
-                <p className="report-card-query">{report.sourceQuery}</p>
-              )}
-              <div className="report-card-date">{formatDate(report.createdAt)}</div>
-            </button>
+            </div>
           ))}
         </div>
       )}
