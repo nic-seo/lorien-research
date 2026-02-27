@@ -2,6 +2,7 @@ import { useLocation } from 'react-router-dom';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Topbar from './components/layout/Topbar';
 import SearchOverlay from './components/layout/SearchOverlay';
+import QuickAddOverlay from './components/layout/QuickAddOverlay';
 import PanelShell from './panels/PanelShell';
 import { PanelProvider, usePanels } from './panels/PanelContext';
 import { useExternalLinkInterceptor } from './hooks/useExternalLinkInterceptor';
@@ -19,6 +20,7 @@ export default function App() {
 
 function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
   });
@@ -45,6 +47,10 @@ function AppLayout() {
         e.preventDefault();
         setSearchOpen(prev => !prev);
       }
+      if (e.ctrlKey && e.key === 'q') {
+        e.preventDefault();
+        setQueueOpen(prev => !prev);
+      }
       if (e.ctrlKey && e.key === 'p') {
         e.preventDefault();
         // Open new panel at current project, or overview if not on a project page
@@ -54,6 +60,7 @@ function AppLayout() {
       }
       if (e.key === 'Escape') {
         setSearchOpen(false);
+        setQueueOpen(false);
       }
     };
     window.addEventListener('keydown', handler);
@@ -76,6 +83,7 @@ function AppLayout() {
       </div>
 
       {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
+      {queueOpen && <QuickAddOverlay onClose={() => setQueueOpen(false)} />}
     </div>
   );
 }

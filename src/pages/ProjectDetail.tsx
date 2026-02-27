@@ -1,6 +1,6 @@
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
-import { useDoc, useProjectDocs } from '../db/hooks';
+import { useDoc, useProjectDocs, useQueue } from '../db/hooks';
 import { createDoc, deleteDoc, deleteReport } from '../db';
 import type { Project, Report, Note, Chat, Reference } from '../db/types';
 import { generateReport } from '../lib/api';
@@ -33,6 +33,7 @@ export default function ProjectDetail() {
   const { docs: notes } = useProjectDocs<Note>('note', projectId || null);
   const { docs: chats } = useProjectDocs<Chat>('chat', projectId || null);
   const { docs: refs } = useProjectDocs<Reference>('reference', projectId || null);
+  const { items: queueItems } = useQueue(projectId || '', 'open');
 
   // Tab key cycles between tabs (only when no input/textarea is focused)
   const cycleTab = useCallback((direction: 1 | -1) => {
@@ -69,7 +70,7 @@ export default function ProjectDetail() {
     notes: notes.length,
     chats: chats.length,
     references: refs.length,
-    queue: 0, // queue shows its own count
+    queue: queueItems.length,
   };
 
   return (
