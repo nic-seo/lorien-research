@@ -1,17 +1,12 @@
 interface TopbarProps {
-  onMenuToggle: () => void;
   onSearchOpen: () => void;
   theme: 'light' | 'dark';
   onThemeToggle: () => void;
 }
 
-export default function Topbar({ onMenuToggle, onSearchOpen, theme, onThemeToggle }: TopbarProps) {
+export default function Topbar({ onSearchOpen, theme, onThemeToggle }: TopbarProps) {
   return (
     <header className="topbar">
-      <button className="topbar-menu-btn" onClick={onMenuToggle} title="Toggle sidebar">
-        ☰
-      </button>
-
       <div className="topbar-spacer" />
 
       <button className="topbar-action" onClick={onSearchOpen} title="Search (⌘K)">

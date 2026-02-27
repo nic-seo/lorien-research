@@ -135,6 +135,73 @@ app.post('/api/research', async (req: express.Request, res: express.Response) =>
   }
 });
 
+// Chat with project context
+app.post('/api/chat', async (req: express.Request, res: express.Response) => {
+  const { messages, projectContext } = req.body as {
+    messages?: { role: string; content: string }[];
+    projectContext?: { title: string; description: string; reportTitles: string[] };
+  };
+
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    res.status(400).json({ error: 'Missing or empty "messages" array.' });
+    return;
+  }
+
+  if (!projectContext?.title) {
+    res.status(400).json({ error: 'Missing "projectContext.title".' });
+    return;
+  }
+
+  // Build system prompt with project context
+  let systemPrompt = `You are a research assistant for the project "${projectContext.title}".`;
+
+  if (projectContext.description) {
+    systemPrompt += `\n\nProject description: ${projectContext.description}`;
+  }
+
+  if (projectContext.reportTitles && projectContext.reportTitles.length > 0) {
+    systemPrompt += `\n\nReports generated so far:\n${projectContext.reportTitles.map((t) => `- ${t}`).join('\n')}`;
+  }
+
+  systemPrompt += `\n\nHelp the user explore this topic. Be concise, direct, and useful. When referencing reports, mention them by title. You can suggest new research directions, answer questions about the topic, and help the user think through their research.`;
+
+  console.log(`[chat] Message for project "${projectContext.title}" (${messages.length} messages)`);
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: messages.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+    });
+
+    const textBlock = response.content.find((block) => block.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      res.status(500).json({ error: 'No text content in Claude response.' });
+      return;
+    }
+
+    console.log(`[chat] Response: ${textBlock.text.slice(0, 80)}...`);
+    res.json({ content: textBlock.text });
+  } catch (err: unknown) {
+    console.error('[chat] Failed:', err);
+
+    if (err instanceof Anthropic.APIError) {
+      res.status(err.status || 500).json({
+        error: `Claude API error: ${err.message}`,
+      });
+      return;
+    }
+
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'Unknown server error.',
+    });
+  }
+});
+
 // --- Catch silent crashes ---
 
 process.on('uncaughtException', (err) => {
@@ -152,6 +219,15 @@ const server = app.listen(PORT, () => {
   console.log(`  Health check: http://localhost:${PORT}/api/health\n`);
 });
 
-// Keep the process alive
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n  Port ${PORT} is already in use.`);
+    console.error(`  Kill the other process first:  lsof -ti:${PORT} | xargs kill\n`);
+  } else {
+    console.error('[server] Failed to start:', err);
+  }
+  process.exit(1);
+});
+
 server.keepAliveTimeout = 120000;
 server.headersTimeout = 120000;

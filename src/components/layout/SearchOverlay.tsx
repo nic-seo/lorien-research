@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { usePanels } from '../../panels/PanelContext';
 import { useDocs } from '../../db/hooks';
 import type { Project, Report, Note } from '../../db/types';
 
@@ -17,7 +17,7 @@ interface SearchResult {
 export default function SearchOverlay({ onClose }: SearchOverlayProps) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
+  const { navigatePanel } = usePanels();
 
   const { docs: projects } = useDocs<Project>('project');
   const { docs: reports } = useDocs<Report>('report');
@@ -38,7 +38,7 @@ export default function SearchOverlay({ onClose }: SearchOverlayProps) {
     });
     reports.forEach(r => {
       if (r.title.toLowerCase().includes(q) || r.sourceQuery.toLowerCase().includes(q)) {
-        results.push({ id: r._id, title: r.title, type: 'Report', path: `/report/${r._id}` });
+        results.push({ id: r._id, title: r.title, type: 'Report', path: `/project/${r.projectId}/report/${r._id}` });
       }
     });
     notes.forEach(n => {
@@ -54,7 +54,7 @@ export default function SearchOverlay({ onClose }: SearchOverlayProps) {
   }
 
   const goTo = (path: string) => {
-    navigate(path);
+    navigatePanel(path);
     onClose();
   };
 

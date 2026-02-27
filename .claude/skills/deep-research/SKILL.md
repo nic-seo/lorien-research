@@ -99,7 +99,7 @@ The report has three zones: **opening bookend**, **adaptive middle**, and **clos
 
 3. **Reading & Watch List** — Curated resources for going deeper, organized into categories with colored dot indicators. Always include at least 2-3 categories from: Seminal Blog Posts, Academic Papers, Talks & Videos, Books, Podcasts, Tools & Libraries, Courses, Newsletters, Communities. Each resource should be a clickable card with title, author/source, and a one-line description of why it's worth reading/watching. This is NOT the same as a sources/bibliography section — the Reading & Watch List is a curated recommendation list for the reader who wants to go deeper. Include 3-8 resources per category, and only include categories that have genuinely good recommendations for the topic. Use the `.reading-category` pattern with `.resource-card` elements, with colored `.cat-dot` indicators per category (pink for blog posts, blue for papers, green for talks/videos, yellow for books, lavender for other categories).
 
-4. **Related Subjects to Explore** — A tag cloud of 8-15 adjacent topics, fields, or concepts that intersect with the research topic. These should help the reader understand the intellectual neighborhood of what they just read and identify natural next areas to explore. Use the `.tag-cloud` pattern with `.tag-pill` elements. Each tag should be a concise topic name (2-5 words), not a full question. Good tags are specific enough to be searchable — "RAG Architectures" is better than "Related AI Topics."
+4. **Related Subjects to Explore** — Exactly 3 tag pills representing highly specific follow-up topics that emerge directly from the report's findings. These are NOT generic adjacent fields — they should be precise enough that someone could paste them as a research query and get targeted results. Derive them from the most interesting threads, tensions, or open questions surfaced during your research. For example, if your report covers context engineering for LLMs, good tags would be "Retrieval-Augmented Generation Chunking Strategies" or "Tool-Use Orchestration in Multi-Agent Systems" — not generic tags like "AI Engineering" or "Machine Learning." Use the `.tag-cloud` pattern with `.tag-pill` elements. Each tag should be a concise but specific topic name (3-7 words).
 
 That's it for the closing bookend — just those two sections. Things like a sources bibliography or questions for further research may naturally emerge in the adaptive middle if the content calls for them, but they are not prescribed. The goal is clarity and insight, not structural compliance. Aim for 3-7 middle sections — enough to be substantive, not so many that the report feels fragmented.
 
@@ -111,7 +111,7 @@ The design system is called "Japanese Highlighter" — IBM Plex Mono monospace f
 
 Key things the template gives you:
 - **Sidebar nav** with scroll-tracking active state
-- **Hero section** with topic title, subtitle, and colored tags
+- **Hero section** with topic title, subtitle, and compiled date
 - **Section headings** with pink highlighter underline effect
 - **Card grid** for comparing players/concepts (2-column)
 - **Caution cards** for risks/warnings (coral left border)

@@ -1,18 +1,28 @@
-import { Routes, Route } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
-import Sidebar from './components/layout/Sidebar';
 import Topbar from './components/layout/Topbar';
 import SearchOverlay from './components/layout/SearchOverlay';
-import Overview from './pages/Overview';
-import ProjectDetail from './pages/ProjectDetail';
-import ReportView from './pages/ReportView';
+import PanelShell from './panels/PanelShell';
+import { PanelProvider, usePanels } from './panels/PanelContext';
 
 export default function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 900);
+  const location = useLocation();
+  const initialPath = location.pathname + location.search;
+
+  return (
+    <PanelProvider initialPath={initialPath}>
+      <AppLayout />
+    </PanelProvider>
+  );
+}
+
+function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
   });
+
+  const { panels, addPanel, getFirstPanelPath } = usePanels();
 
   // Apply theme to <html>
   useEffect(() => {
@@ -24,12 +34,19 @@ export default function App() {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   }, []);
 
-  // Cmd+K to open search
+  // Keyboard shortcuts: Cmd+K search, Ctrl+P new panel
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setSearchOpen(prev => !prev);
+      }
+      if (e.ctrlKey && e.key === 'p') {
+        e.preventDefault();
+        // Open new panel at current project, or overview if not on a project page
+        const currentPath = getFirstPanelPath();
+        const projectMatch = currentPath.match(/^\/project\/([^/]+)/);
+        addPanel(projectMatch ? `/project/${projectMatch[1]}` : '/');
       }
       if (e.key === 'Escape') {
         setSearchOpen(false);
@@ -37,31 +54,20 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
-
-  // Close sidebar on mobile when navigating
-  const handleNavigation = useCallback(() => {
-    if (window.innerWidth <= 900) {
-      setSidebarOpen(false);
-    }
-  }, []);
+  }, [addPanel, getFirstPanelPath]);
 
   return (
     <div className="app-layout">
-      <Sidebar isOpen={sidebarOpen} onNavigate={handleNavigation} />
       <div className="main">
         <Topbar
-          onMenuToggle={() => setSidebarOpen(prev => !prev)}
           onSearchOpen={() => setSearchOpen(true)}
           theme={theme}
           onThemeToggle={toggleTheme}
         />
-        <div className="content">
-          <Routes>
-            <Route path="/" element={<Overview />} />
-            <Route path="/project/:projectId" element={<ProjectDetail />} />
-            <Route path="/report/:reportId" element={<ReportView />} />
-          </Routes>
+        <div className="content-area">
+          {panels.map(panel => (
+            <PanelShell key={panel.id} panel={panel} />
+          ))}
         </div>
       </div>
 

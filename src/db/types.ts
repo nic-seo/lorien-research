@@ -23,7 +23,6 @@ export interface Report extends BaseDoc {
   title: string;
   htmlContent: string;
   sourceQuery: string;
-  tags: string[];
 }
 
 export interface Note extends BaseDoc {

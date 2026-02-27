@@ -1,14 +1,15 @@
-import { useNavigate } from 'react-router-dom';
 import { useProjectDocs, useQueue } from '../../db/hooks';
+import { deleteProject } from '../../db';
 import type { Project, Report, Note, Chat, Reference } from '../../db/types';
-import TagPill from '../ui/TagPill';
+import ConfirmDeleteButton from '../ui/ConfirmDeleteButton';
+import { usePanelNavigate } from '../../panels/usePanelNavigate';
 
 interface ProjectCardProps {
   project: Project;
 }
 
 export default function ProjectCard({ project }: ProjectCardProps) {
-  const navigate = useNavigate();
+  const panelNavigate = usePanelNavigate();
   const { docs: reports } = useProjectDocs<Report>('report', project._id);
   const { docs: notes } = useProjectDocs<Note>('note', project._id);
   const { docs: chats } = useProjectDocs<Chat>('chat', project._id);
@@ -22,16 +23,11 @@ export default function ProjectCard({ project }: ProjectCardProps) {
     { label: 'Refs', count: refs.length, color: 'yellow' as const },
   ];
 
-  const updated = new Date(project.updatedAt).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-
   return (
-    <div className="card" onClick={() => navigate(`/project/${project._id}`)}>
+    <div className="card" onClick={(e) => panelNavigate(`/project/${project._id}`, e)}>
       <div className="card-header">
         <h3 className="card-title">{project.title}</h3>
-        <span className="card-date">{updated}</span>
+        <ConfirmDeleteButton onConfirm={() => deleteProject(project._id)} />
       </div>
 
       <p className="card-description">{project.description}</p>
@@ -47,14 +43,6 @@ export default function ProjectCard({ project }: ProjectCardProps) {
       {queueItems.length > 0 && (
         <div className="card-queue-badge">
           {queueItems.length} open queue item{queueItems.length !== 1 ? 's' : ''}
-        </div>
-      )}
-
-      {project.tags.length > 0 && (
-        <div className="card-tags">
-          {project.tags.slice(0, 4).map(tag => (
-            <TagPill key={tag} label={tag} color="lavender" />
-          ))}
         </div>
       )}
     </div>

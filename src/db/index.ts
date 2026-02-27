@@ -61,6 +61,71 @@ export async function deleteDoc(id: string): Promise<void> {
   await db.remove(doc);
 }
 
+/**
+ * Cascade-delete a project and all its children (reports, notes, chats,
+ * references, queue-items) plus any Link documents that reference them.
+ */
+export async function deleteProject(projectId: string): Promise<void> {
+  const childTypes: DocType[] = ['report', 'note', 'chat', 'reference', 'queue-item'];
+
+  // Gather all child docs
+  const childResults = await Promise.all(
+    childTypes.map(type => getProjectDocs(type, projectId))
+  );
+  const allChildren = childResults.flat();
+
+  // Gather links for the project itself + every child
+  const linkResults = await Promise.all([
+    getLinksFor(projectId),
+    ...allChildren.map(child => getLinksFor(child._id)),
+  ]);
+  const allLinks = linkResults.flat();
+
+  // Deduplicate links
+  const seen = new Set<string>();
+  const uniqueLinks = allLinks.filter(link => {
+    if (seen.has(link._id)) return false;
+    seen.add(link._id);
+    return true;
+  });
+
+  // Fetch the project doc
+  const project = await db.get(projectId);
+
+  // Bulk-delete everything
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toDelete = [...allChildren, ...uniqueLinks, project].map(doc => ({
+    _id: doc._id,
+    _rev: (doc as any)._rev,
+    _deleted: true as const,
+  }));
+
+  if (toDelete.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.bulkDocs(toDelete as any[]);
+  }
+}
+
+/**
+ * Delete a report and any Link documents that reference it.
+ */
+export async function deleteReport(reportId: string): Promise<void> {
+  const [report, links] = await Promise.all([
+    db.get(reportId),
+    getLinksFor(reportId),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toDelete = [report, ...links].map(doc => ({
+    _id: doc._id,
+    _rev: (doc as any)._rev,
+    _deleted: true as const,
+  }));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await db.bulkDocs(toDelete as any[]);
+}
+
 // --- Query helpers ---
 
 export async function getDocsByType<T extends AnyDoc>(type: DocType): Promise<T[]> {
