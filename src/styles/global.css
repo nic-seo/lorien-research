@@ -1372,6 +1372,14 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   font-size: 13.5px;
   line-height: 1.8;
   color: var(--text);
+  cursor: text;
+  min-height: 200px;
+  border-radius: 4px;
+  padding: 14px;
+  transition: background 0.15s;
+}
+.note-body:hover {
+  background: var(--border-light);
 }
 .note-body h1,
 .note-body h2,
@@ -1455,35 +1463,41 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 
 .note-editor-title {
   width: 100%;
-  padding: 10px 14px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 18px;
+  padding: 6px 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  font-size: 22px;
   font-weight: 700;
   font-family: inherit;
   color: var(--text);
   outline: none;
+  letter-spacing: -0.01em;
+  margin-bottom: 16px;
   transition: border-color 0.15s;
-  margin-bottom: 12px;
+}
+.note-editor-title::placeholder {
+  color: var(--text-secondary);
+  font-weight: 400;
 }
 .note-editor-title:focus {
-  border-color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .note-editor-textarea {
   width: 100%;
-  min-height: 450px;
+  min-height: 200px;
   padding: 14px;
-  background: var(--bg);
+  background: var(--border-light);
   border: 1px solid var(--border);
   border-radius: 4px;
   font-size: 13.5px;
   font-family: inherit;
   color: var(--text);
   line-height: 1.8;
-  resize: vertical;
+  resize: none;
   outline: none;
+  overflow: hidden;
   transition: border-color 0.15s;
 }
 .note-editor-textarea:focus {
@@ -1494,6 +1508,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   color: var(--text-secondary);
   font-style: italic;
   font-size: 13px;
+  padding: 14px;
 }
 
 /* ===== Panels ===== */

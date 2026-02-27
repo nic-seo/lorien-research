@@ -259,55 +259,23 @@ function NotesList({
   panelNavigate: (path: string, event?: React.MouseEvent) => void;
   projectId: string;
 }) {
-  const [showForm, setShowForm] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-
   const handleCreate = async () => {
-    const title = newTitle.trim() || 'Untitled';
     const doc = await createDoc<Note>('note', {
       projectId,
-      title,
+      title: 'Untitled',
       content: '',
       tags: [],
     });
-    setNewTitle('');
-    setShowForm(false);
     panelNavigate(`/project/${projectId}/note/${doc._id}`);
   };
 
   return (
     <div>
-      {!showForm ? (
-        <button className="btn btn-primary" onClick={() => setShowForm(true)} style={{ marginBottom: 16 }}>
-          + New Note
-        </button>
-      ) : (
-        <div className="report-form" style={{ marginBottom: 16 }}>
-          <label className="report-form-label">Note title</label>
-          <input
-            type="text"
-            className="form-input"
-            value={newTitle}
-            onChange={e => setNewTitle(e.target.value)}
-            placeholder="Enter a title..."
-            onKeyDown={e => {
-              if (e.key === 'Enter') handleCreate();
-              if (e.key === 'Escape') { setShowForm(false); setNewTitle(''); }
-            }}
-            autoFocus
-          />
-          <div className="report-form-actions">
-            <button className="btn btn-primary" onClick={handleCreate}>
-              Create
-            </button>
-            <button className="btn" onClick={() => { setShowForm(false); setNewTitle(''); }}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      <button className="btn btn-primary" onClick={handleCreate} style={{ marginBottom: 16 }}>
+        + New Note
+      </button>
 
-      {notes.length === 0 && !showForm && (
+      {notes.length === 0 && (
         <div className="empty-state">No notes yet.</div>
       )}
 

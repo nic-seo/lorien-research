@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { marked } from 'marked';
 import { useDoc } from '../db/hooks';
 import { updateDoc, deleteDoc } from '../db';
@@ -13,94 +13,99 @@ export default function NoteView() {
   const navigate = useNavigate();
   const { doc: note, loading } = useDoc<Note>(noteId || null);
 
-  const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [isNew, setIsNew] = useState(false);
+  const [editingBody, setEditingBody] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Sync local state when note loads
   useEffect(() => {
     if (note) {
       setTitle(note.title);
       setContent(note.content);
-      // Open in edit mode if it's a brand-new empty note
-      if (note.content === '' && !editing) {
-        setIsNew(true);
-        setEditing(true);
+      // New empty notes: open body for editing immediately
+      if (note.content === '') {
+        setEditingBody(true);
       }
     }
   }, [note?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track dirty state
-  const dirty = editing && note
-    ? title !== note.title || content !== note.content
-    : false;
-
-  // Warn before leaving with unsaved changes
+  // Auto-resize textarea to fit content
   useEffect(() => {
-    if (!dirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
+    if (editingBody && textareaRef.current) {
+      const ta = textareaRef.current;
+      ta.style.height = 'auto';
+      ta.style.height = Math.max(200, ta.scrollHeight) + 'px';
+    }
+  }, [editingBody, content]);
+
+  // Save helper
+  const save = useCallback(async (newTitle: string, newContent: string) => {
+    if (!noteId) return;
+    await updateDoc<Note>(noteId, {
+      title: newTitle.trim() || 'Untitled',
+      content: newContent,
+    });
+  }, [noteId]);
+
+  // Debounced auto-save while typing
+  const debouncedSave = useCallback((newTitle: string, newContent: string) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => save(newTitle, newContent), 800);
+  }, [save]);
+
+  // Flush pending save on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [dirty]);
+  }, []);
 
-  // Keyboard shortcuts in edit mode
+  const handleTitleChange = (newTitle: string) => {
+    setTitle(newTitle);
+    debouncedSave(newTitle, content);
+  };
+
+  const handleTitleBlur = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    save(title, content);
+  };
+
+  const handleContentChange = (newContent: string) => {
+    setContent(newContent);
+    debouncedSave(title, newContent);
+  };
+
+  const handleBodyBlur = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    save(title, content);
+    setEditingBody(false);
+  };
+
+  const handleBodyClick = () => {
+    setEditingBody(true);
+  };
+
+  // Focus textarea when entering edit mode
   useEffect(() => {
-    if (!editing) return;
+    if (editingBody && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [editingBody]);
+
+  // Escape exits body editing
+  useEffect(() => {
+    if (!editingBody) return;
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        handleSave();
-      }
       if (e.key === 'Escape') {
         e.preventDefault();
-        handleCancel();
+        textareaRef.current?.blur();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [editing, title, content, note]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleSave = useCallback(async () => {
-    if (!noteId || saving) return;
-    setSaving(true);
-    try {
-      await updateDoc<Note>(noteId, {
-        title: title.trim() || 'Untitled',
-        content,
-      });
-      setEditing(false);
-      setIsNew(false);
-    } finally {
-      setSaving(false);
-    }
-  }, [noteId, title, content, saving]);
-
-  const handleCancel = useCallback(() => {
-    if (dirty) {
-      if (!window.confirm('You have unsaved changes. Discard them?')) return;
-    }
-    if (note) {
-      setTitle(note.title);
-      setContent(note.content);
-    }
-    setEditing(false);
-    // If it was a brand-new note the user cancelled, go back
-    if (isNew) {
-      navigate(-1);
-    }
-  }, [dirty, note, isNew, navigate]);
-
-  const handleEdit = useCallback(() => {
-    if (note) {
-      setTitle(note.title);
-      setContent(note.content);
-    }
-    setEditing(true);
-  }, [note]);
+  }, [editingBody]);
 
   const handleDelete = useCallback(async () => {
     if (!noteId) return;
@@ -108,15 +113,6 @@ export default function NoteView() {
     await deleteDoc(noteId);
     navigate(-1);
   }, [noteId, navigate]);
-
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
 
   if (loading) return <div className="page-loading">Loading...</div>;
   if (!note) return <div className="page-loading">Note not found.</div>;
@@ -132,67 +128,43 @@ export default function NoteView() {
 
       <div className="note-view-header">
         <div className="note-view-actions">
-          {editing ? (
-            <>
-              <button
-                className="btn btn-primary"
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-              <button className="btn" onClick={handleCancel}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="btn" onClick={handleEdit}>
-                Edit
-              </button>
-              <button className="btn" onClick={handleDelete}>
-                Delete
-              </button>
-            </>
-          )}
+          <button className="btn" onClick={handleDelete}>
+            Delete
+          </button>
         </div>
       </div>
 
-      {editing ? (
-        <>
-          <input
-            type="text"
-            className="note-editor-title"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="Note title..."
-            autoFocus={isNew}
-          />
-          <textarea
-            className="note-editor-textarea"
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            placeholder="Write in markdown..."
-            autoFocus={!isNew}
-          />
-        </>
+      <input
+        type="text"
+        className="note-editor-title"
+        value={title}
+        onChange={e => handleTitleChange(e.target.value)}
+        onBlur={handleTitleBlur}
+        placeholder="Untitled"
+      />
+
+      {editingBody ? (
+        <textarea
+          ref={textareaRef}
+          className="note-editor-textarea"
+          value={content}
+          onChange={e => handleContentChange(e.target.value)}
+          onBlur={handleBodyBlur}
+          placeholder="Start writing... (markdown supported)"
+        />
       ) : (
-        <>
-          <h2 className="note-title">{note.title}</h2>
-          <div className="note-meta">
-            Updated {formatDate(note.updatedAt)}
-          </div>
-          {note.content ? (
-            <div
-              className="note-body"
-              dangerouslySetInnerHTML={{ __html: marked(note.content) as string }}
-            />
+        <div
+          className="note-body"
+          onClick={handleBodyClick}
+        >
+          {content ? (
+            <div dangerouslySetInnerHTML={{ __html: marked(content) as string }} />
           ) : (
             <div className="note-empty-body">
-              This note is empty. Click Edit to start writing.
+              Click to start writing...
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );
