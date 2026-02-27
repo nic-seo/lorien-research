@@ -79,7 +79,7 @@ export default function ProjectDetail() {
           <ReportsList reports={reports} navigate={navigate} formatDate={formatDate} projectId={projectId || ''} />
         )}
         {activeTab === 'notes' && (
-          <NotesList notes={notes} formatDate={formatDate} />
+          <NotesList notes={notes} formatDate={formatDate} navigate={navigate} projectId={projectId || ''} />
         )}
         {activeTab === 'chats' && (
           <ChatsList chats={chats} formatDate={formatDate} />
@@ -218,22 +218,88 @@ function ReportsList({
   );
 }
 
-function NotesList({ notes, formatDate }: { notes: Note[]; formatDate: (iso: string) => string }) {
-  if (notes.length === 0) return <div className="empty-state">No notes yet.</div>;
+function NotesList({
+  notes,
+  formatDate,
+  navigate,
+  projectId,
+}: {
+  notes: Note[];
+  formatDate: (iso: string) => string;
+  navigate: (path: string) => void;
+  projectId: string;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+
+  const handleCreate = async () => {
+    const title = newTitle.trim() || 'Untitled';
+    const doc = await createDoc<Note>('note', {
+      projectId,
+      title,
+      content: '',
+      tags: [],
+    });
+    setNewTitle('');
+    setShowForm(false);
+    navigate(`/note/${doc._id}`);
+  };
+
   return (
-    <div className="list">
-      {notes.map(note => (
-        <div key={note._id} className="list-item">
-          <div className="list-item-content">
-            <span className="list-item-title">{note.title}</span>
-            <span className="list-item-meta">
-              {note.content.slice(0, 120)}
-              {note.content.length > 120 ? '…' : ''}
-            </span>
+    <div>
+      {!showForm ? (
+        <button className="btn btn-primary" onClick={() => setShowForm(true)} style={{ marginBottom: 16 }}>
+          + New Note
+        </button>
+      ) : (
+        <div className="report-form" style={{ marginBottom: 16 }}>
+          <label className="report-form-label">Note title</label>
+          <input
+            type="text"
+            className="form-input"
+            value={newTitle}
+            onChange={e => setNewTitle(e.target.value)}
+            placeholder="Enter a title..."
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleCreate();
+              if (e.key === 'Escape') { setShowForm(false); setNewTitle(''); }
+            }}
+            autoFocus
+          />
+          <div className="report-form-actions">
+            <button className="btn btn-primary" onClick={handleCreate}>
+              Create
+            </button>
+            <button className="btn" onClick={() => { setShowForm(false); setNewTitle(''); }}>
+              Cancel
+            </button>
           </div>
-          <span className="list-item-date">{formatDate(note.updatedAt)}</span>
         </div>
-      ))}
+      )}
+
+      {notes.length === 0 && !showForm && (
+        <div className="empty-state">No notes yet.</div>
+      )}
+
+      <div className="list">
+        {notes.map(note => (
+          <div
+            key={note._id}
+            className="list-item"
+            style={{ cursor: 'pointer' }}
+            onClick={() => navigate(`/note/${note._id}`)}
+          >
+            <div className="list-item-content">
+              <span className="list-item-title">{note.title}</span>
+              <span className="list-item-meta">
+                {note.content.slice(0, 120)}
+                {note.content.length > 120 ? '…' : ''}
+              </span>
+            </div>
+            <span className="list-item-date">{formatDate(note.updatedAt)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

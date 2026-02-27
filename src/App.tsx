@@ -6,6 +6,7 @@ import SearchOverlay from './components/layout/SearchOverlay';
 import Overview from './pages/Overview';
 import ProjectDetail from './pages/ProjectDetail';
 import ReportView from './pages/ReportView';
+import NoteView from './pages/NoteView';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 900);
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="/" element={<Overview />} />
             <Route path="/project/:projectId" element={<ProjectDetail />} />
             <Route path="/report/:reportId" element={<ReportView />} />
+            <Route path="/note/:noteId" element={<NoteView />} />
           </Routes>
         </div>
       </div>
