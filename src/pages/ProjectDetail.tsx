@@ -216,7 +216,7 @@ function ReportsList({
             <div className="report-generating-meta">
               "{query.length > 60 ? query.slice(0, 60) + '…' : query}" — {elapsed}s elapsed
             </div>
-            <div className="report-generating-hint">This usually takes 30–60 seconds.</div>
+
           </div>
         </div>
       )}

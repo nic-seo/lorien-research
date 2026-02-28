@@ -10,8 +10,8 @@ export async function generateReport(query: string): Promise<GenerateReportResul
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
-    // Reports can take 2-3 minutes to generate — don't let the browser kill it early
-    signal: AbortSignal.timeout(5 * 60 * 1000),
+    // Reports with web search can take up to 10 minutes (multiple search + read cycles)
+    signal: AbortSignal.timeout(10 * 60 * 1000),
   });
 
   if (!response.ok) {
@@ -44,7 +44,8 @@ export async function sendChatMessage(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, projectContext }),
-    signal: AbortSignal.timeout(60 * 1000),
+    // Chat may do 1-2 web searches before responding
+    signal: AbortSignal.timeout(2 * 60 * 1000),
   });
 
   if (!response.ok) {

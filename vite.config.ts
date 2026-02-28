@@ -12,9 +12,9 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
-        // Research reports can take 2-3 minutes to generate
-        timeout: 300_000,
-        proxyTimeout: 300_000,
+        // Research reports with web search can take up to 10 minutes
+        timeout: 600_000,
+        proxyTimeout: 600_000,
       },
     },
   },
