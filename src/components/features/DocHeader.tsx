@@ -1,7 +1,8 @@
 import { ChevronLeft, X } from 'lucide-react';
 import LinkedItems from './LinkedItems';
+import TopicPicker from './TopicPicker';
 import { usePanels } from '../../panels/PanelContext';
-import { usePanelId } from '../../panels/PanelShell';
+import { usePanelId, PanelDragHandle } from '../../panels/PanelShell';
 import { usePanelNavigate } from '../../panels/usePanelNavigate';
 import type { DocType } from '../../db/types';
 
@@ -28,6 +29,8 @@ export default function DocHeader({ backPath, backLabel = 'Back', docId, docType
       {docId && docType && projectId && (
         <LinkedItems docId={docId} docType={docType} projectId={projectId} />
       )}
+      {docId && projectId && <TopicPicker docId={docId} projectId={projectId} />}
+      <PanelDragHandle className="panel-drag-handle" />
       {isMultiPanel && panelId && (
         <button
           className="doc-header-close"

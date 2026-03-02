@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Link as LinkIcon } from 'lucide-react';
+import { Link as LinkIcon, X, ArrowRight } from 'lucide-react';
 import { useLinks, useProjectDocs, type ResolvedLink } from '../../db/hooks';
 import { createLink, deleteDoc } from '../../db';
 import { usePanelNavigate } from '../../panels/usePanelNavigate';
@@ -48,102 +48,19 @@ interface LinkedItemsProps {
 
 export default function LinkedItems({ docId, docType, projectId }: LinkedItemsProps) {
   const { links } = useLinks(docId);
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  return (
-    <div className="linked-items">
-      <div className="linked-items-row">
-        {links.map((link, i) => (
-          <LinkedChip key={link.linkId} link={link} showDivider={i > 0} />
-        ))}
-        <button
-          className="linked-items-add"
-          onClick={() => setPickerOpen(prev => !prev)}
-          title="Add link"
-        >
-          <LinkIcon size={12} />
-        </button>
-      </div>
-
-      {pickerOpen && (
-        <LinkPicker
-          docId={docId}
-          docType={docType}
-          projectId={projectId}
-          existingLinks={links}
-          onClose={() => setPickerOpen(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function LinkedChip({ link, showDivider }: { link: ResolvedLink; showDivider: boolean }) {
-  const panelNavigate = usePanelNavigate();
-  const path = getDocPath(link);
-
-  const handleClick = (e: React.MouseEvent) => {
-    if (path) panelNavigate(path, e);
-  };
-
-  const handleRemove = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    await deleteDoc(link.linkId);
-  };
-
-  return (
-    <>
-      {showDivider && <span className="linked-chip-divider" />}
-      <div className="linked-chip" onClick={handleClick} title={`${TYPE_LABELS[link.docType] || link.docType}: ${link.title}`}>
-        <span className={`linked-chip-type badge-${TYPE_COLORS[link.docType] || 'blue'}`}>
-          {TYPE_LABELS[link.docType] || link.docType}
-        </span>
-        <span className="linked-chip-title">{link.title}</span>
-        <button className="linked-chip-remove" onClick={handleRemove} title="Remove link">
-          <X size={10} />
-        </button>
-      </div>
-    </>
-  );
-}
-
-function LinkPicker({
-  docId,
-  docType,
-  projectId,
-  existingLinks,
-  onClose,
-}: {
-  docId: string;
-  docType: DocType;
-  projectId: string;
-  existingLinks: ResolvedLink[];
-  onClose: () => void;
-}) {
+  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelNavigate = usePanelNavigate();
 
   const { docs: reports } = useProjectDocs<Report>('report', projectId);
   const { docs: notes } = useProjectDocs<Note>('note', projectId);
   const { docs: chats } = useProjectDocs<Chat>('chat', projectId);
   const { docs: refs } = useProjectDocs<Reference>('reference', projectId);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  const hasLinks = links.length > 0;
 
-  // Close on Escape
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
-
-  const existingIds = new Set(existingLinks.map(l => l.docId));
-
-  // Build flat list of project-scoped linkable docs
   const allDocs: LinkableDoc[] = [
     ...reports.map(r => ({ id: r._id, type: 'report' as DocType, title: r.title })),
     ...notes.map(n => ({ id: n._id, type: 'note' as DocType, title: n.title })),
@@ -151,50 +68,128 @@ function LinkPicker({
     ...refs.map(r => ({ id: r._id, type: 'reference' as DocType, title: r.title })),
   ];
 
+  const existingIds = new Set(links.map(l => l.docId));
   const q = query.toLowerCase().trim();
   const filtered = allDocs.filter(d => {
-    if (d.id === docId) return false; // can't link to self
-    if (existingIds.has(d.id)) return false; // already linked
+    if (d.id === docId) return false;
+    if (existingIds.has(d.id)) return false;
     if (!q) return true;
     return d.title.toLowerCase().includes(q) || d.type.includes(q);
   });
 
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 30);
+    else setQuery('');
+  }, [open]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleRemove = async (e: React.MouseEvent, linkId: string) => {
+    e.stopPropagation();
+    await deleteDoc(linkId);
+  };
+
+  const handleNavigate = (e: React.MouseEvent, link: ResolvedLink) => {
+    const path = getDocPath(link);
+    if (path) { panelNavigate(path, e); setOpen(false); }
+  };
+
   const handleSelect = async (target: LinkableDoc) => {
     await createLink(docId, docType, target.id, target.type);
-    onClose();
+    setQuery('');
+    inputRef.current?.focus();
   };
 
   return (
-    <div className="link-picker">
-      <input
-        ref={inputRef}
-        type="text"
-        className="link-picker-input"
-        placeholder="Search to link…"
-        value={query}
-        onChange={e => setQuery(e.target.value)}
-        onKeyDown={e => {
-          if (e.key === 'Escape') onClose();
-          if (e.key === 'Enter' && filtered.length > 0) handleSelect(filtered[0]);
-        }}
-      />
-      <div className="link-picker-results">
-        {filtered.length === 0 && (
-          <div className="link-picker-empty">No matches</div>
-        )}
-        {filtered.slice(0, 8).map(d => (
-          <button
-            key={d.id}
-            className="link-picker-item"
-            onClick={() => handleSelect(d)}
-          >
-            <span className={`linked-chip-type badge-${TYPE_COLORS[d.type] || 'blue'}`}>
-              {TYPE_LABELS[d.type] || d.type}
-            </span>
-            <span className="link-picker-item-title">{d.title}</span>
-          </button>
-        ))}
-      </div>
+    <div className="linked-items" ref={containerRef}>
+      <button
+        className={`linked-items-btn ${hasLinks ? 'has-links' : ''}`}
+        onClick={() => setOpen(prev => !prev)}
+        title={hasLinks ? `${links.length} linked item${links.length !== 1 ? 's' : ''}` : 'Add link'}
+      >
+        <LinkIcon size={13} />
+        {hasLinks && <span className="linked-items-count">{links.length}</span>}
+      </button>
+
+      {open && (
+        <div className="linked-items-dropdown">
+          {/* Active links */}
+          {links.length > 0 && (
+            <div className="linked-items-active">
+              {links.map(link => {
+                const path = getDocPath(link);
+                return (
+                  <div key={link.linkId} className="linked-items-row">
+                    <span className={`linked-chip-type badge-${TYPE_COLORS[link.docType] || 'blue'}`}>
+                      {TYPE_LABELS[link.docType] || link.docType}
+                    </span>
+                    <span className="linked-items-row-title">{link.title}</span>
+                    {path && (
+                      <button
+                        className="linked-items-row-nav"
+                        onClick={e => handleNavigate(e, link)}
+                        title="Go to"
+                      >
+                        <ArrowRight size={11} />
+                      </button>
+                    )}
+                    <button
+                      className="linked-items-row-remove"
+                      onClick={e => handleRemove(e, link.linkId)}
+                      title="Remove link"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Search + add */}
+          <div className={`linked-items-search ${links.length > 0 ? 'has-divider' : ''}`}>
+            <input
+              ref={inputRef}
+              type="text"
+              className="linked-items-input"
+              placeholder="Search to link…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') setOpen(false);
+                if (e.key === 'Enter' && filtered.length > 0) handleSelect(filtered[0]);
+              }}
+            />
+            <div className="linked-items-results">
+              {filtered.length === 0 && (
+                <div className="linked-items-empty">
+                  {q ? 'No matches' : allDocs.length === 0 ? 'No docs in project' : 'All docs linked'}
+                </div>
+              )}
+              {filtered.slice(0, 8).map(d => (
+                <button
+                  key={d.id}
+                  className="linked-items-result-item"
+                  onClick={() => handleSelect(d)}
+                >
+                  <span className={`linked-chip-type badge-${TYPE_COLORS[d.type] || 'blue'}`}>
+                    {TYPE_LABELS[d.type] || d.type}
+                  </span>
+                  <span className="linked-items-row-title">{d.title}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

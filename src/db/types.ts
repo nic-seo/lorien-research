@@ -1,6 +1,6 @@
 // Document types for PouchDB
 
-export type DocType = 'project' | 'report' | 'note' | 'chat' | 'reference' | 'queue-item' | 'link';
+export type DocType = 'project' | 'report' | 'note' | 'chat' | 'reference' | 'queue-item' | 'link' | 'topic';
 
 export interface BaseDoc {
   _id: string;
@@ -17,12 +17,19 @@ export interface Project extends BaseDoc {
   tags: string[];
 }
 
+export interface Topic extends BaseDoc {
+  type: 'topic';
+  projectId: string;
+  name: string;
+}
+
 export interface Report extends BaseDoc {
   type: 'report';
   projectId: string | null;
   title: string;
   htmlContent: string;
   sourceQuery: string;
+  topicIds?: string[];
 }
 
 export interface Note extends BaseDoc {
@@ -31,6 +38,7 @@ export interface Note extends BaseDoc {
   title: string;
   content: string; // markdown
   tags: string[];
+  topicIds?: string[];
 }
 
 export interface ChatMessage {
@@ -44,6 +52,7 @@ export interface Chat extends BaseDoc {
   projectId: string | null;
   title: string;
   messages: ChatMessage[];
+  topicIds?: string[];
 }
 
 export type RefType = 'video' | 'blog' | 'paper' | 'link' | 'book' | 'podcast';
@@ -57,17 +66,17 @@ export interface Reference extends BaseDoc {
   author: string;
   notes: string;
   tags: string[];
+  topicIds?: string[];
 }
 
-export type QueueItemType = 'read' | 'watch' | 'question' | 'todo';
 export type QueueStatus = 'open' | 'done';
 
 export interface QueueItem extends BaseDoc {
   type: 'queue-item';
   projectId: string;
   text: string;
-  itemType: QueueItemType;
   linkedDocId: string | null;
+  topicIds?: string[];
   status: QueueStatus;
   priority: number;
 }
@@ -80,7 +89,7 @@ export interface Link extends BaseDoc {
   targetType: DocType;
 }
 
-export type AnyDoc = Project | Report | Note | Chat | Reference | QueueItem | Link;
+export type AnyDoc = Project | Report | Note | Chat | Reference | QueueItem | Link | Topic;
 
 // Helper type for docs that belong to a project
 export type ProjectContent = Report | Note | Chat | Reference;

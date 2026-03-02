@@ -36,6 +36,23 @@ export interface ProjectContext {
   reportTitles: string[];
 }
 
+export async function generateChatTitle(firstMessage: string): Promise<string> {
+  try {
+    const response = await fetch('/api/generate-title', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstMessage }),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!response.ok) return firstMessage.slice(0, 50) + (firstMessage.length > 50 ? '…' : '');
+    const data = await response.json();
+    return data.title || firstMessage.slice(0, 50);
+  } catch {
+    return firstMessage.slice(0, 50) + (firstMessage.length > 50 ? '…' : '');
+  }
+}
+
 export async function sendChatMessage(
   messages: ChatMessageInput[],
   projectContext: ProjectContext

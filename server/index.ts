@@ -265,7 +265,7 @@ app.post('/api/research', async (req: express.Request, res: express.Response) =>
       console.log(`[research] Loop ${loopCount} — sending ${messages.length} messages`);
 
       const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 16000,
         system: buildSystemMessage(),
         tools: TOOLS,
@@ -420,7 +420,7 @@ app.post('/api/chat', async (req: express.Request, res: express.Response) => {
       loopCount++;
 
       const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: systemPrompt,
         tools: TOOLS,
@@ -497,6 +497,46 @@ app.post('/api/chat', async (req: express.Request, res: express.Response) => {
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Unknown server error.',
     });
+  }
+});
+
+// Generate a short chat title using Haiku
+app.post('/api/generate-title', async (req: express.Request, res: express.Response) => {
+  const { firstMessage } = req.body as { firstMessage?: string };
+
+  if (!firstMessage || typeof firstMessage !== 'string' || firstMessage.trim().length === 0) {
+    res.status(400).json({ error: 'Missing "firstMessage" field.' });
+    return;
+  }
+
+  console.log(`[generate-title] Generating title for: "${firstMessage.slice(0, 60)}..."`);
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 30,
+      messages: [
+        {
+          role: 'user',
+          content: `Generate a short title (4–6 words) for a research chat that starts with:\n\n"${firstMessage.slice(0, 500)}"\n\nReturn ONLY the title. No quotes, no punctuation at the end, no explanation.`,
+        },
+      ],
+    });
+
+    const textBlock = response.content.find((b) => b.type === 'text');
+    const title = textBlock?.type === 'text' ? textBlock.text.trim() : firstMessage.slice(0, 50);
+
+    console.log(`[generate-title] → "${title}"`);
+    res.json({ title });
+  } catch (err: unknown) {
+    console.error('[generate-title] Failed:', err);
+
+    if (err instanceof Anthropic.APIError) {
+      res.status(err.status || 500).json({ error: `Claude API error: ${err.message}` });
+      return;
+    }
+
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error.' });
   }
 });
 

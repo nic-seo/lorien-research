@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { useDoc, useProjectDocs } from '../../db/hooks';
 import { updateDoc } from '../../db';
-import { sendChatMessage } from '../../lib/api';
+import { sendChatMessage, generateChatTitle } from '../../lib/api';
 import type { Chat, ChatMessage, Project, Report } from '../../db/types';
 import DocHeader from './DocHeader';
 
@@ -73,17 +73,21 @@ export default function ChatView() {
 
     // Persist user message
     try {
-      // Auto-title from first message
-      const updates: Partial<Chat> = { messages: updatedMessages };
-      if (chat.title === 'New chat' && chat.messages.length === 0) {
-        const autoTitle = userMessage.content.slice(0, 50) + (userMessage.content.length > 50 ? '…' : '');
-        updates.title = autoTitle;
-      }
-      await updateDoc<Chat>(chatId, updates);
+      await updateDoc<Chat>(chatId, { messages: updatedMessages });
     } catch {
       setError('Failed to save message.');
       setSending(false);
       return;
+    }
+
+    // Auto-title using Haiku (fire-and-forget). Retries on every send until a
+    // title sticks — always based on the first user message in the chat.
+    if (chat.title === 'New chat') {
+      const firstUserMsg =
+        chat.messages.find(m => m.role === 'user')?.content ?? userMessage.content;
+      generateChatTitle(firstUserMsg).then(title => {
+        updateDoc<Chat>(chatId, { title }).catch(() => {});
+      });
     }
 
     // Call the API
@@ -134,6 +138,10 @@ export default function ChatView() {
         docType="chat"
         projectId={projectId}
       />
+
+      <div className="chat-title-bar">
+        <span className="chat-title-text">{chat.title}</span>
+      </div>
 
       <div className="chat-messages" ref={messagesRef}>
           {chat.messages.length === 0 && !sending && (

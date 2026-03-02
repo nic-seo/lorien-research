@@ -24,10 +24,15 @@ const TAB_CONFIG: { key: Tab; label: string; badge: 'pink' | 'green' | 'blue' | 
 export default function ProjectDetail() {
   const { projectId } = useParams<{ projectId: string }>();
   const panelNavigate = usePanelNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { doc: project, loading } = useDoc<Project>(projectId || null);
   const initialTab = (searchParams.get('tab') as Tab | null) ?? 'reports';
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+
+  // Keep the URL's ?tab= param in sync so sessionStorage persistence captures the active tab
+  useEffect(() => {
+    setSearchParams({ tab: activeTab }, { replace: true });
+  }, [activeTab, setSearchParams]);
 
   const { docs: reports } = useProjectDocs<Report>('report', projectId || null);
   const { docs: notes } = useProjectDocs<Note>('note', projectId || null);

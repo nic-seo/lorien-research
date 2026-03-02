@@ -158,7 +158,13 @@ export async function getQueueItems(
   if (status) selector.status = status;
 
   const result = await db.find({ selector });
-  return result.docs as unknown as QueueItem[];
+  const items = result.docs as unknown as QueueItem[];
+  // Sort by priority (ascending), then by creation time for stable tie-breaking
+  return items.sort((a, b) =>
+    a.priority !== b.priority
+      ? a.priority - b.priority
+      : a.createdAt.localeCompare(b.createdAt),
+  );
 }
 
 // --- Reference helpers ---
