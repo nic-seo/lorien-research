@@ -427,6 +427,10 @@ h3.subsection-title {
 .tab.tab-color-yellow.active { color: #8a7a40; }
 .tab.tab-color-yellow.active { border-bottom-color: var(--yellow); }
 
+.tab.tab-color-lavender:hover,
+.tab.tab-color-lavender.active { color: #7a6890; }
+.tab.tab-color-lavender.active { border-bottom-color: var(--lavender); }
+
 /* Dark mode: use the brighter base color vars for readability */
 [data-theme="dark"] .tab.tab-color-pink:hover,
 [data-theme="dark"] .tab.tab-color-pink.active  { color: var(--pink); }
@@ -438,6 +442,8 @@ h3.subsection-title {
 [data-theme="dark"] .tab.tab-color-coral.active { color: var(--coral); }
 [data-theme="dark"] .tab.tab-color-yellow:hover,
 [data-theme="dark"] .tab.tab-color-yellow.active { color: var(--yellow); }
+[data-theme="dark"] .tab.tab-color-lavender:hover,
+[data-theme="dark"] .tab.tab-color-lavender.active { color: var(--lavender); }
 
 /* ===== Search overlay ===== */
 .search-overlay {
@@ -794,12 +800,14 @@ h3.subsection-title {
 .tab-content-blue .btn-primary  { background: #5878a0; border-color: #5878a0; }
 .tab-content-coral .btn-primary { background: #8a6050; border-color: #8a6050; }
 .tab-content-yellow .btn-primary { background: #8a7a40; border-color: #8a7a40; }
+.tab-content-lavender .btn-primary { background: #7a6890; border-color: #7a6890; }
 
 [data-theme="dark"] .tab-content-pink .btn-primary  { background: var(--pink); border-color: var(--pink); color: #1a1a2e; }
 [data-theme="dark"] .tab-content-green .btn-primary { background: var(--green); border-color: var(--green); color: #1a1a2e; }
 [data-theme="dark"] .tab-content-blue .btn-primary  { background: var(--blue); border-color: var(--blue); color: #1a1a2e; }
 [data-theme="dark"] .tab-content-coral .btn-primary { background: var(--coral); border-color: var(--coral); color: #1a1a2e; }
 [data-theme="dark"] .tab-content-yellow .btn-primary { background: var(--yellow); border-color: var(--yellow); color: #1a1a2e; }
+[data-theme="dark"] .tab-content-lavender .btn-primary { background: var(--lavender); border-color: var(--lavender); color: #1a1a2e; }
 
 /* ===== Empty states ===== */
 .empty-state {
@@ -1130,9 +1138,29 @@ h3.subsection-title {
 .tab-count.badge-blue { background: var(--blue-light); color: #5878a0; }
 .tab-count.badge-yellow { background: var(--yellow-light); color: #8a7a40; }
 .tab-count.badge-coral { background: var(--coral-light); color: #8a6050; }
+.tab-count.badge-lavender { background: var(--lavender-light); color: #7a6890; }
 
 /* ===== List (content lists in project tabs) ===== */
 .list { display: flex; flex-direction: column; gap: 6px; }
+
+/* Wrapper that holds a list-item + optional utility buttons outside the box */
+.list-item-row {
+  position: relative;
+}
+.list-item-row .list-item {
+  margin-bottom: 0;
+}
+.list-item-row .topic-picker {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+.list-item-row .topic-picker-btn,
+.list-item-row .topic-picker-btn.has-topics { opacity: 0; }
+.list-item-row:hover .topic-picker-btn,
+.list-item-row:hover .topic-picker-btn.has-topics { opacity: 1; }
+
 .list-item.clickable { cursor: pointer; }
 .list-item-content { flex: 1; min-width: 0; }
 .list-item-title {
@@ -1283,7 +1311,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .project-detail-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 0 24px 80px;
+  padding: 0 48px 80px 24px;
   max-width: 800px;
   margin: 0 auto;
   width: 100%;
@@ -1990,7 +2018,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 }
 .content-area:has(.panel:only-child) .project-detail-scroll {
   max-width: 900px;
-  padding: 0 32px 120px;
+  padding: 0 56px 120px 32px;
 }
 .content-area:has(.panel:only-child) .note-scroll {
   max-width: 900px;
@@ -2289,6 +2317,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .list-item .btn-delete { opacity: 0; }
 .list-item:hover .btn-delete { opacity: 1; }
 
+
 /* ---- Linked Items ---- */
 
 .linked-items {
@@ -2492,4 +2521,24 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .embed-error a {
   color: var(--link);
   text-decoration: underline;
+}
+
+/* ===== Home Tab ===== */
+.home-tab-divider {
+  border: none;
+  border-top: 1px solid var(--border-light);
+  margin: 24px 0;
+}
+.home-tab-topic-group {
+  margin-bottom: 20px;
+}
+.home-tab-topic-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--lavender);
+  border-left: 3px solid var(--lavender);
+  padding-left: 8px;
+  margin-bottom: 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
