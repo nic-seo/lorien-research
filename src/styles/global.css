@@ -2998,6 +2998,40 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   cursor: not-allowed;
 }
 
+.settings-version {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.settings-version-label {
+  opacity: 0.7;
+}
+.settings-update-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.settings-update-btn:hover {
+  border-color: var(--pink);
+  color: var(--text);
+}
+.settings-update-status {
+  font-size: 0.75rem;
+  color: var(--pink);
+}
+
 /* Onboarding overlay — blocks everything, no dismiss */
 
 .onboarding-overlay {

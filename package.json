@@ -34,11 +34,18 @@
       {
         "from": ".claude/skills/deep-research",
         "to": "skills",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "nic-seo",
+      "repo": "lorien-research"
+    },
     "mac": {
-      "target": "dmg",
+      "target": ["dmg", "zip"],
       "category": "public.app-category.productivity"
     },
     "win": {
@@ -58,6 +65,7 @@
     "@tiptap/starter-kit": "^3.20.0",
     "@types/pouchdb": "^6.4.2",
     "dotenv": "^17.3.1",
+    "electron-updater": "^6.8.3",
     "events": "^3.3.0",
     "express": "^5.2.1",
     "lucide-react": "^0.575.0",

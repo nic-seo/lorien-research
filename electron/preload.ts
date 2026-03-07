@@ -13,4 +13,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   hasApiKeys: (): Promise<boolean> =>
     ipcRenderer.invoke('has-api-keys'),
+
+  // App info & updates
+  getAppVersion: (): Promise<string> =>
+    ipcRenderer.invoke('get-app-version'),
+
+  checkForUpdates: (): Promise<{ status: string; version?: string; message?: string }> =>
+    ipcRenderer.invoke('check-for-updates'),
 });

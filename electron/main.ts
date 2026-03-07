@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
+import { autoUpdater } from 'electron-updater';
 import { getKey, setKey, hasKeys } from './key-store.js';
 import { startServer, updateServerKeys, stopServer } from './server-bridge.js';
 
@@ -8,6 +9,41 @@ let serverPort: number | null = null;
 let serverError: string | null = null;
 
 const isDev = !app.isPackaged;
+
+// --- Auto-updater setup ---
+
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[updater] Update available: v${info.version}`);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] Update downloaded: v${info.version}`);
+    dialog.showMessageBox(mainWindow!, {
+      type: 'info',
+      title: 'Update Ready',
+      message: `Version ${info.version} has been downloaded.`,
+      detail: 'It will be installed when you restart the app.',
+      buttons: ['Restart Now', 'Later'],
+      defaultId: 0,
+    }).then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[updater] Error:', err.message);
+  });
+
+  autoUpdater.checkForUpdatesAndNotify();
+}
+
+// --- Window creation ---
 
 async function createWindow() {
   // Read stored keys
@@ -65,6 +101,11 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Check for updates after window is ready (production only)
+  if (!isDev) {
+    setupAutoUpdater();
+  }
 }
 
 // --- IPC Handlers ---
@@ -93,6 +134,20 @@ ipcMain.handle('set-api-keys', async (_event, keys: { anthropicKey: string; brav
 
 ipcMain.handle('has-api-keys', () => {
   return hasKeys();
+});
+
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});
+
+ipcMain.handle('check-for-updates', async () => {
+  if (isDev) return { status: 'dev' };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { status: 'checked', version: result?.updateInfo?.version };
+  } catch (err) {
+    return { status: 'error', message: err instanceof Error ? err.message : 'Unknown error' };
+  }
 });
 
 // --- App lifecycle ---

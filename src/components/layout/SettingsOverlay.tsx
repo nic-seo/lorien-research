@@ -12,6 +12,8 @@ export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState('');
+  const [updateStatus, setUpdateStatus] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Load existing keys on mount
@@ -20,6 +22,7 @@ export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
       setAnthropicKey(keys.anthropicKey || '');
       setBraveKey(keys.braveKey || '');
     });
+    window.electronAPI?.getAppVersion().then(v => setAppVersion(v || ''));
     inputRef.current?.focus();
   }, []);
 
@@ -120,6 +123,32 @@ export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
           >
             {saving ? 'Saving...' : saved ? 'Saved' : 'Save Keys'}
           </button>
+
+          {appVersion && (
+            <div className="settings-version">
+              <span className="settings-version-label">v{appVersion}</span>
+              <button
+                className="settings-update-btn"
+                onClick={async () => {
+                  setUpdateStatus('Checking...');
+                  const result = await window.electronAPI?.checkForUpdates();
+                  if (!result || result.status === 'dev') {
+                    setUpdateStatus('Dev mode — updates disabled');
+                  } else if (result.status === 'checked' && result.version) {
+                    setUpdateStatus(`Update available: v${result.version}`);
+                  } else if (result.status === 'checked') {
+                    setUpdateStatus('You\'re up to date');
+                  } else {
+                    setUpdateStatus(result.message || 'Check failed');
+                  }
+                  setTimeout(() => setUpdateStatus(''), 5000);
+                }}
+              >
+                Check for updates
+              </button>
+              {updateStatus && <span className="settings-update-status">{updateStatus}</span>}
+            </div>
+          )}
         </div>
       </div>
     </div>
