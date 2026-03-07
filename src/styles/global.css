@@ -168,6 +168,7 @@ body {
   justify-content: space-between;
   z-index: 90;
   backdrop-filter: blur(10px);
+  -webkit-app-region: drag;
 }
 .topbar-left { display: flex; align-items: center; gap: 12px; }
 .topbar-right { display: flex; align-items: center; gap: 6px; }
@@ -1043,6 +1044,27 @@ h3.subsection-title {
   background: var(--accent-light);
   border-color: var(--accent);
   color: var(--accent);
+}
+/* Extra left padding in Electron to clear macOS traffic-light buttons (~70px) */
+.topbar-electron { padding-left: 80px; }
+/* Make interactive topbar children non-draggable so clicks register */
+.topbar-action,
+.topbar-btn,
+.topbar-menu-btn,
+.topbar-wordmark,
+.sessions-menu,
+.sessions-btn { -webkit-app-region: no-drag; }
+.topbar-wordmark {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  user-select: none;
+}
+.topbar-wordmark-muted {
+  color: var(--text-secondary);
+  font-weight: 400;
+  margin-left: 4px;
 }
 .topbar-spacer { flex: 1; }
 .topbar-action {

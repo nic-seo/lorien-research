@@ -8,8 +8,13 @@ interface TopbarProps {
 }
 
 export default function Topbar({ onSearchOpen, onSettingsOpen, theme, onThemeToggle }: TopbarProps) {
+  const isElectron = !!window.electronAPI?.isElectron;
+
   return (
-    <header className="topbar">
+    <header className={`topbar${isElectron ? ' topbar-electron' : ''}`}>
+      <span className="topbar-wordmark">
+        lorien<span className="topbar-wordmark-muted">research</span>
+      </span>
       <div className="topbar-spacer" />
 
       <SessionsMenu />
