@@ -2,11 +2,12 @@ import SessionsMenu from './SessionsMenu';
 
 interface TopbarProps {
   onSearchOpen: () => void;
+  onSettingsOpen?: () => void;
   theme: 'light' | 'dark';
   onThemeToggle: () => void;
 }
 
-export default function Topbar({ onSearchOpen, theme, onThemeToggle }: TopbarProps) {
+export default function Topbar({ onSearchOpen, onSettingsOpen, theme, onThemeToggle }: TopbarProps) {
   return (
     <header className="topbar">
       <div className="topbar-spacer" />
@@ -21,6 +22,12 @@ export default function Topbar({ onSearchOpen, theme, onThemeToggle }: TopbarPro
       <button className="topbar-action" onClick={onThemeToggle} title="Toggle theme">
         {theme === 'light' ? '◐' : '◑'}
       </button>
+
+      {window.electronAPI?.isElectron && onSettingsOpen && (
+        <button className="topbar-action" onClick={onSettingsOpen} title="Settings">
+          ⚙
+        </button>
+      )}
     </header>
   );
 }

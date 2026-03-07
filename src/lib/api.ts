@@ -141,7 +141,7 @@ export async function sendChatMessage(
       try { event = JSON.parse(json); } catch { continue; }
 
       if (event.type === 'tool' && onTool) {
-        onTool(event as ChatToolEvent);
+        onTool(event as unknown as ChatToolEvent);
       } else if (event.type === 'response') {
         return {
           content: event.content as string,

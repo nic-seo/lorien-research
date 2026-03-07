@@ -4,6 +4,8 @@ import Topbar from './components/layout/Topbar';
 import SearchOverlay from './components/layout/SearchOverlay';
 import QuickAddOverlay from './components/layout/QuickAddOverlay';
 import QuickLookupOverlay from './components/layout/QuickLookupOverlay';
+import SettingsOverlay from './components/layout/SettingsOverlay';
+import OnboardingOverlay from './components/layout/OnboardingOverlay';
 import PanelShell from './panels/PanelShell';
 import { PanelProvider, usePanels } from './panels/PanelContext';
 import { useExternalLinkInterceptor } from './hooks/useExternalLinkInterceptor';
@@ -23,6 +25,8 @@ function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [lookupOpen, setLookupOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
   });
@@ -31,6 +35,15 @@ function AppLayout() {
   const { panels, addPanel, getFirstPanelPath } = usePanels();
 
   useExternalLinkInterceptor(contentAreaRef);
+
+  // Check if running in Electron and needs API key setup
+  useEffect(() => {
+    if (window.electronAPI?.isElectron) {
+      window.electronAPI.hasApiKeys().then(has => {
+        setNeedsOnboarding(!has);
+      });
+    }
+  }, []);
 
   // Apply theme to <html>
   useEffect(() => {
@@ -79,6 +92,7 @@ function AppLayout() {
       <div className="main">
         <Topbar
           onSearchOpen={() => setSearchOpen(true)}
+          onSettingsOpen={() => setSettingsOpen(true)}
           theme={theme}
           onThemeToggle={toggleTheme}
         />
@@ -92,6 +106,10 @@ function AppLayout() {
       {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
       {queueOpen && <QuickAddOverlay onClose={() => setQueueOpen(false)} />}
       {lookupOpen && <QuickLookupOverlay onClose={() => setLookupOpen(false)} />}
+      {settingsOpen && <SettingsOverlay onClose={() => setSettingsOpen(false)} />}
+      {needsOnboarding && (
+        <OnboardingOverlay onComplete={() => setNeedsOnboarding(false)} />
+      )}
     </div>
   );
 }
