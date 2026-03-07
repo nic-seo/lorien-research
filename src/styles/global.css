@@ -771,6 +771,107 @@ h3.subsection-title {
   color: var(--text-secondary);
 }
 
+/* ===== Quick Lookup overlay (Ctrl+/) ===== */
+.lookup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(44,42,39,0.4);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+}
+[data-theme="dark"] .lookup-overlay { background: rgba(0,0,0,0.6); }
+
+.lookup-modal {
+  background: var(--surface);
+  border-radius: 8px;
+  width: 480px;
+  max-width: 90vw;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollable Q&A thread */
+.lookup-thread {
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 14px 18px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lookup-entry {
+  display: flex;
+  flex-direction: column;
+}
+
+.lookup-q {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+.lookup-q::before { content: '↳ '; opacity: 0.5; }
+
+.lookup-a {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.lookup-thinking {
+  color: var(--text-secondary);
+  font-style: italic;
+  animation: lookupPulse 1.2s ease-in-out infinite;
+}
+@keyframes lookupPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.lookup-error {
+  font-size: 12.5px;
+  color: #c0392b;
+}
+[data-theme="dark"] .lookup-error { color: #e88080; }
+
+/* Input row */
+.lookup-input-row {
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.lookup-input {
+  flex: 1;
+  padding: 14px 18px;
+  border: none;
+  background: transparent;
+  font-size: 13.5px;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+}
+.lookup-input::placeholder { color: var(--text-secondary); }
+.lookup-input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Footer hint */
+.lookup-hint {
+  padding: 6px 18px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  border-top: 1px solid var(--border-light);
+}
+
 /* ===== Buttons ===== */
 .btn {
   display: inline-flex;
@@ -965,6 +1066,150 @@ h3.subsection-title {
 .topbar-search-hint {
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+/* ===== Sessions menu ===== */
+.sessions-menu {
+  position: relative;
+  margin-left: 4px;
+}
+.sessions-btn {
+  max-width: 160px;
+}
+.sessions-btn.active {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sessions-label {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 110px;
+  color: var(--text-secondary);
+}
+.sessions-btn.active .sessions-label { color: var(--accent); }
+
+.sessions-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+  z-index: 300;
+  overflow: hidden;
+}
+
+/* Save row */
+.sessions-save-row {
+  display: flex;
+  gap: 6px;
+  padding: 10px 10px 8px;
+}
+.sessions-name-input {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+  min-width: 0;
+}
+.sessions-name-input:focus { border-color: var(--accent); }
+.sessions-save-btn {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.1s;
+}
+.sessions-save-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--surface);
+}
+.sessions-save-btn:disabled { opacity: 0.4; cursor: default; }
+
+.sessions-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0;
+}
+
+/* Sessions list */
+.sessions-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.sessions-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.sessions-item:hover { background: var(--accent-light); }
+.sessions-item.active {
+  background: var(--accent-light);
+}
+.sessions-item.active .sessions-item-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+.sessions-item-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sessions-item-meta {
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+.sessions-item.active .sessions-item-meta {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sessions-item-delete {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+.sessions-item:hover .sessions-item-delete { opacity: 1; }
+.sessions-item-delete:hover { color: #c0392b; }
+
+.sessions-empty {
+  padding: 14px 10px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 /* ===== Search overlay — React version ===== */
@@ -1237,6 +1482,19 @@ h3.subsection-title {
   font-size: 12px;
   color: var(--text);
   flex: 1;
+  cursor: text;
+}
+.queue-item-edit {
+  flex: 1;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  outline: none;
+  padding: 0;
+  min-width: 0;
 }
 .queue-done-section {
   margin-top: 20px;
@@ -2286,6 +2544,38 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   border-radius: 4px;
 }
 [data-theme="dark"] .chat-error { color: var(--coral); }
+/* Research trace — shown while the assistant is doing web searches/reads */
+.chat-trace {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.chat-trace-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.75;
+  animation: trace-fade-in 0.2s ease;
+}
+.chat-trace-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--blue);
+}
+.chat-trace-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+@keyframes trace-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 0.75; transform: translateY(0); }
+}
 .chat-input-area {
   flex-shrink: 0;
   padding-top: 12px;

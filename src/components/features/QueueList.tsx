@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Circle, CheckCircle2, GripVertical } from 'lucide-react';
 import { useQueue } from '../../db/hooks';
 import { createDoc, updateDoc } from '../../db/index';
@@ -12,6 +12,11 @@ export default function QueueList({ projectId }: QueueListProps) {
   const { items: openItems } = useQueue(projectId, 'open');
   const { items: doneItems } = useQueue(projectId, 'done');
   const [text, setText] = useState('');
+
+  // Inline editing state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const cancellingRef = useRef(false);
 
   // Drag state
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -29,6 +34,25 @@ export default function QueueList({ projectId }: QueueListProps) {
       priority: openItems.length > 0 ? openItems[openItems.length - 1].priority + 1 : 0,
     });
     setText('');
+  };
+
+  const startEdit = (item: QueueItem) => {
+    cancellingRef.current = false;
+    setEditingId(item._id);
+    setEditingText(item.text);
+  };
+
+  const commitEdit = async () => {
+    if (cancellingRef.current) { cancellingRef.current = false; return; }
+    const id = editingId;
+    const trimmed = editingText.trim();
+    setEditingId(null);
+    if (id && trimmed) await updateDoc<QueueItem>(id, { text: trimmed });
+  };
+
+  const cancelEdit = () => {
+    cancellingRef.current = true;
+    setEditingId(null);
   };
 
   const toggleDone = async (item: QueueItem) => {
@@ -113,7 +137,7 @@ export default function QueueList({ projectId }: QueueListProps) {
               draggedId === item._id ? 'queue-item-dragging' : '',
               dragOverId === item._id ? `queue-item-drop-${dragOverPos}` : '',
             ].filter(Boolean).join(' ')}
-            draggable
+            draggable={editingId !== item._id}
             onDragStart={e => handleDragStart(e, item._id)}
             onDragOver={e => handleDragOver(e, item._id)}
             onDrop={e => handleDrop(e, item._id)}
@@ -129,7 +153,24 @@ export default function QueueList({ projectId }: QueueListProps) {
             >
               <Circle size={13} />
             </button>
-            <span className="queue-item-text">{item.text}</span>
+            {editingId === item._id ? (
+              <input
+                className="queue-item-edit"
+                value={editingText}
+                onChange={e => setEditingText(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') e.currentTarget.blur();
+                  if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+                }}
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+              />
+            ) : (
+              <span className="queue-item-text" onClick={() => startEdit(item)}>
+                {item.text}
+              </span>
+            )}
           </div>
         ))}
       </div>
@@ -147,7 +188,24 @@ export default function QueueList({ projectId }: QueueListProps) {
               >
                 <CheckCircle2 size={13} />
               </button>
-              <span className="queue-item-text">{item.text}</span>
+              {editingId === item._id ? (
+                <input
+                  className="queue-item-edit"
+                  value={editingText}
+                  onChange={e => setEditingText(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+                  }}
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                />
+              ) : (
+                <span className="queue-item-text" onClick={() => startEdit(item)}>
+                  {item.text}
+                </span>
+              )}
             </div>
           ))}
         </div>

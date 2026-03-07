@@ -1,3 +1,5 @@
+import SessionsMenu from './SessionsMenu';
+
 interface TopbarProps {
   onSearchOpen: () => void;
   theme: 'light' | 'dark';
@@ -8,6 +10,8 @@ export default function Topbar({ onSearchOpen, theme, onThemeToggle }: TopbarPro
   return (
     <header className="topbar">
       <div className="topbar-spacer" />
+
+      <SessionsMenu />
 
       <button className="topbar-action" onClick={onSearchOpen} title="Search (⌘K)">
         <span>⌕</span>

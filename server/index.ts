@@ -229,7 +229,7 @@ RESEARCH TOOLS:
 // --- Express app ---
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -366,13 +366,15 @@ app.post('/api/research', async (req: express.Request, res: express.Response) =>
   }
 });
 
-// Chat with project context
+// Chat with project context — streams tool events via SSE, then emits final response
 app.post('/api/chat', async (req: express.Request, res: express.Response) => {
-  const { messages, projectContext } = req.body as {
+  const { messages, projectContext, summary: existingSummary } = req.body as {
     messages?: { role: string; content: string }[];
     projectContext?: { title: string; description: string; reportTitles: string[] };
+    summary?: string;
   };
 
+  // Validate before SSE headers so we can return a plain JSON error
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     res.status(400).json({ error: 'Missing or empty "messages" array.' });
     return;
@@ -382,6 +384,30 @@ app.post('/api/chat', async (req: express.Request, res: express.Response) => {
     res.status(400).json({ error: 'Missing "projectContext.title".' });
     return;
   }
+
+  // --- SSE setup ---
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable Nginx buffering
+  res.flushHeaders();
+
+  const emit = (event: object) => {
+    if (res.writableEnded) return;
+    try {
+      res.write('data: ' + JSON.stringify(event) + '\n\n');
+    } catch {
+      // Client disconnected mid-stream — ignore
+    }
+  };
+
+  // Note: we do NOT use clientGone as a loop-exit condition — Vite's dev proxy
+  // fires req 'close' when the request body is consumed (not when the SSE stream closes),
+  // which would kill the loop before any Anthropic calls happen.
+  // The emit() guard (res.writableEnded) handles the actual disconnect case.
+  req.on('close', () => {
+    console.log('[chat] Client disconnected or request closed.');
+  });
 
   // Build system prompt with project context
   const today = new Date().toLocaleDateString('en-US', {
@@ -404,28 +430,92 @@ app.post('/api/chat', async (req: express.Request, res: express.Response) => {
   systemPrompt += `\n\nHelp the user explore this topic. Be concise, direct, and useful. When referencing reports, mention them by title. You can suggest new research directions, answer questions about the topic, and help the user think through their research.`;
   systemPrompt += `\n\nYou have access to web_search and read_page tools. Use them when the user asks about current events, recent developments, or anything that benefits from up-to-date information. For general knowledge questions you can answer confidently, respond directly without searching. Keep searches focused — 1-2 searches is usually enough for a chat response.`;
 
-  console.log(`[chat] Message for project "${projectContext.title}" (${messages.length} messages)`);
+  console.log(`[chat] Project "${projectContext.title}" — ${messages.length} messages, summary: ${existingSummary ? existingSummary.length + ' chars' : 'none'}`);
 
   try {
-    const chatMessages: Anthropic.Messages.MessageParam[] = messages.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
+    // --- History management ---
+    const CHAR_BUDGET = 400_000;
+    const RECENT_KEEP = 20;
+
+    let verbatimMessages = messages;
+    let newSummary: string | null = null;
+    let summarizedCount: number | null = null;
+
+    const verbatimChars = messages.reduce((s, m) => s + m.content.length, 0);
+    const totalChars = verbatimChars + (existingSummary?.length ?? 0);
+
+    if (totalChars > CHAR_BUDGET && messages.length > RECENT_KEEP) {
+      const recentMessages = messages.slice(-RECENT_KEEP);
+      const oldMessages = messages.slice(0, -RECENT_KEEP);
+
+      const parts: string[] = [];
+      if (existingSummary) {
+        parts.push(`Previous conversation summary:\n${existingSummary}`);
+      }
+      parts.push(
+        `New conversation messages to incorporate:\n` +
+        oldMessages
+          .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+          .join('\n\n')
+      );
+
+      console.log(`[chat] Summarizing ${oldMessages.length} old messages with Haiku…`);
+
+      const summaryResp = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1200,
+        system: `You are a conversation summarizer for a research assistant chat. Produce a concise but thorough summary that preserves: topics discussed, questions asked and answered, research findings, key facts and decisions, and any important context. The summary will replace the original messages, so include everything needed to continue the conversation intelligently.`,
+        messages: [{ role: 'user', content: parts.join('\n\n---\n\n') }],
+      });
+
+      const summaryText = summaryResp.content.find((b) => b.type === 'text');
+      newSummary = summaryText?.type === 'text' ? summaryText.text.trim() : (existingSummary ?? '');
+      summarizedCount = oldMessages.length;
+      verbatimMessages = recentMessages;
+
+      console.log(`[chat] Summary: ${oldMessages.length} messages → ${newSummary.length} chars`);
+    }
+
+    // Build the Anthropic message array: optional summary context + verbatim messages
+    const summaryToUse = newSummary ?? existingSummary ?? null;
+    let chatMessages: Anthropic.Messages.MessageParam[] = [];
+
+    if (summaryToUse) {
+      chatMessages = [
+        { role: 'user', content: `[Earlier conversation summary — treat this as established context:\n\n${summaryToUse}]` },
+        { role: 'assistant', content: 'Understood. I have the context from our earlier conversation and will continue from there.' },
+      ];
+    }
+
+    chatMessages = [
+      ...chatMessages,
+      ...verbatimMessages.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+    ];
 
     let finalText = '';
     let loopCount = 0;
-    const MAX_LOOPS = 5;
+    const MAX_LOOPS = 12;
+    let lastResponse: Anthropic.Messages.Message | null = null;
 
     while (loopCount < MAX_LOOPS) {
       loopCount++;
+      console.log(`[chat] Loop ${loopCount} — ${chatMessages.length} messages in context`);
 
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
-        system: systemPrompt,
-        tools: TOOLS,
-        messages: chatMessages,
-      });
+      const response = await anthropic.messages.create(
+        {
+          model: 'claude-sonnet-4-6',
+          max_tokens: 4096,
+          system: systemPrompt,
+          tools: TOOLS,
+          messages: chatMessages,
+        },
+        { timeout: 90_000 } // 90s per call — prevents silent hangs
+      );
+      lastResponse = response;
+      console.log(`[chat] Loop ${loopCount} — stop_reason: ${response.stop_reason}`);
 
       if (response.stop_reason === 'end_turn') {
         const textBlock = response.content.find((b) => b.type === 'text');
@@ -445,6 +535,16 @@ app.post('/api/chat', async (req: express.Request, res: express.Response) => {
 
           const input = block.input as Record<string, unknown>;
           console.log(`[chat]   Tool: ${block.name}(${JSON.stringify(input).slice(0, 120)})`);
+
+          // Emit tool event to the client before executing so the trace is live
+          if (block.name === 'web_search') {
+            emit({ type: 'tool', tool: 'web_search', query: input.query as string });
+          } else if (block.name === 'read_page') {
+            const url = input.url as string;
+            let domain = url;
+            try { domain = new URL(url).hostname; } catch { /* keep raw url */ }
+            emit({ type: 'tool', tool: 'read_page', url, domain });
+          }
 
           let result: string;
           if (block.name === 'web_search') {
@@ -477,26 +577,37 @@ app.post('/api/chat', async (req: express.Request, res: express.Response) => {
       break;
     }
 
+    // If the loop ran out of turns, try to extract any text from the last response
+    if (!finalText && lastResponse) {
+      const fallback = lastResponse.content.find((b) => b.type === 'text');
+      if (fallback && fallback.type === 'text') {
+        finalText = fallback.text;
+        console.log(`[chat] Used fallback text after hitting MAX_LOOPS (${MAX_LOOPS})`);
+      }
+    }
+
     if (!finalText) {
-      res.status(500).json({ error: 'No response produced.' });
+      emit({ type: 'error', message: 'No response produced.' });
+      res.end();
       return;
     }
 
     console.log(`[chat] Response (${loopCount} loops): ${finalText.slice(0, 80)}...`);
-    res.json({ content: finalText });
+    emit({
+      type: 'response',
+      content: finalText,
+      ...(newSummary != null && summarizedCount != null
+        ? { newSummary, summarizedCount }
+        : {}),
+    });
+    res.end();
   } catch (err: unknown) {
     console.error('[chat] Failed:', err);
-
-    if (err instanceof Anthropic.APIError) {
-      res.status(err.status || 500).json({
-        error: `Claude API error: ${err.message}`,
-      });
-      return;
-    }
-
-    res.status(500).json({
-      error: err instanceof Error ? err.message : 'Unknown server error.',
-    });
+    const message = err instanceof Anthropic.APIError
+      ? `Claude API error: ${err.message}`
+      : err instanceof Error ? err.message : 'Unknown server error.';
+    emit({ type: 'error', message });
+    res.end();
   }
 });
 
@@ -530,6 +641,53 @@ app.post('/api/generate-title', async (req: express.Request, res: express.Respon
     res.json({ title });
   } catch (err: unknown) {
     console.error('[generate-title] Failed:', err);
+
+    if (err instanceof Anthropic.APIError) {
+      res.status(err.status || 500).json({ error: `Claude API error: ${err.message}` });
+      return;
+    }
+
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error.' });
+  }
+});
+
+// Quick single-turn (or multi-turn) question answered by Haiku
+app.post('/api/quick-question', async (req: express.Request, res: express.Response) => {
+  const { question, history } = req.body as {
+    question?: string;
+    history?: { role: string; content: string }[];
+  };
+
+  if (!question?.trim()) {
+    res.status(400).json({ error: 'Missing "question".' });
+    return;
+  }
+
+  console.log(`[quick-question] "${question.slice(0, 60)}"`);
+
+  try {
+    const messages: Anthropic.Messages.MessageParam[] = [
+      ...(history || []).map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+      { role: 'user' as const, content: question.trim() },
+    ];
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 400,
+      system: `You are a fast, concise reference assistant. Answer questions briefly and directly — definitions, facts, names, places, concepts. No preamble or filler. Use markdown only when genuinely helpful (e.g., a short list or inline code).`,
+      messages,
+    });
+
+    const text = response.content.find((b) => b.type === 'text');
+    const answer = text?.type === 'text' ? text.text.trim() : 'No response.';
+
+    console.log(`[quick-question] → ${answer.slice(0, 60)}`);
+    res.json({ answer });
+  } catch (err: unknown) {
+    console.error('[quick-question] Failed:', err);
 
     if (err instanceof Anthropic.APIError) {
       res.status(err.status || 500).json({ error: `Claude API error: ${err.message}` });

@@ -4,6 +4,7 @@ import { marked } from 'marked';
 import { useDoc, useProjectDocs } from '../../db/hooks';
 import { updateDoc } from '../../db';
 import { sendChatMessage, generateChatTitle } from '../../lib/api';
+import type { ChatToolEvent } from '../../lib/api';
 import type { Chat, ChatMessage, Project, Report } from '../../db/types';
 import DocHeader from './DocHeader';
 
@@ -19,6 +20,7 @@ export default function ChatView() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toolTrace, setToolTrace] = useState<ChatToolEvent[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -38,10 +40,10 @@ export default function ChatView() {
     return () => { el.removeEventListener('scroll', onScroll); clearTimeout(timer); };
   }, []);
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when messages change or trace grows
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chat?.messages.length, sending]);
+  }, [chat?.messages.length, sending, toolTrace.length]);
 
   // Auto-resize textarea
   const resizeTextarea = useCallback(() => {
@@ -70,6 +72,7 @@ export default function ChatView() {
     setInput('');
     setError(null);
     setSending(true);
+    setToolTrace([]);
 
     // Persist user message
     try {
@@ -92,7 +95,10 @@ export default function ChatView() {
 
     // Call the API
     try {
-      const apiMessages = updatedMessages.map((m) => ({
+      // Only send messages that aren't already covered by the stored summary.
+      // The server will summarize further if this slice is still too large.
+      const summaryUpToIndex = chat.summaryUpToIndex ?? 0;
+      const apiMessages = updatedMessages.slice(summaryUpToIndex).map((m) => ({
         role: m.role,
         content: m.content,
       }));
@@ -103,7 +109,12 @@ export default function ChatView() {
         reportTitles: reports.map((r) => r.title),
       };
 
-      const response = await sendChatMessage(apiMessages, projectContext);
+      const response = await sendChatMessage(
+        apiMessages,
+        projectContext,
+        chat.summary,
+        (event) => setToolTrace((prev) => [...prev, event]),
+      );
 
       const assistantMessage: ChatMessage = {
         role: 'assistant',
@@ -111,13 +122,23 @@ export default function ChatView() {
         timestamp: new Date().toISOString(),
       };
 
-      await updateDoc<Chat>(chatId, {
+      // If the server compressed some messages into a new summary, persist the
+      // updated summary and advance the summaryUpToIndex so future requests
+      // don't re-send those messages.
+      const docUpdates: Partial<Chat> = {
         messages: [...updatedMessages, assistantMessage],
-      });
+      };
+      if (response.newSummary != null && response.summarizedCount != null) {
+        docUpdates.summary = response.newSummary;
+        docUpdates.summaryUpToIndex = summaryUpToIndex + response.summarizedCount;
+      }
+
+      await updateDoc<Chat>(chatId, docUpdates);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get response.');
     } finally {
       setSending(false);
+      setToolTrace([]);
     }
   };
 
@@ -171,6 +192,22 @@ export default function ChatView() {
                 <span />
                 <span />
               </div>
+              {toolTrace.length > 0 && (
+                <div className="chat-trace">
+                  {toolTrace.map((event, i) => (
+                    <div key={i} className="chat-trace-item">
+                      <span className="chat-trace-icon">
+                        {event.tool === 'web_search' ? '⌕' : '↗'}
+                      </span>
+                      <span className="chat-trace-label">
+                        {event.tool === 'web_search'
+                          ? event.query
+                          : event.domain ?? event.url}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

@@ -111,7 +111,6 @@ export default function ProjectDetail() {
               reports={reports}
               notes={notes}
               chats={chats}
-              refs={refs}
               panelNavigate={panelNavigate}
               formatDate={formatDate}
             />
@@ -170,7 +169,6 @@ function HomeTab({
   reports,
   notes,
   chats,
-  refs,
   panelNavigate,
   formatDate,
 }: {
@@ -178,7 +176,6 @@ function HomeTab({
   reports: Report[];
   notes: Note[];
   chats: Chat[];
-  refs: Reference[];
   panelNavigate: (path: string, event?: React.MouseEvent) => void;
   formatDate: (iso: string) => string;
 }) {
@@ -188,7 +185,6 @@ function HomeTab({
     ...reports.map(r => ({ _id: r._id, title: r.title, docType: 'report' as const, updatedAt: r.updatedAt, topicIds: r.topicIds })),
     ...notes.map(n => ({ _id: n._id, title: n.title, docType: 'note' as const, updatedAt: n.updatedAt, topicIds: n.topicIds })),
     ...chats.map(c => ({ _id: c._id, title: c.title, docType: 'chat' as const, updatedAt: c.updatedAt, topicIds: c.topicIds })),
-    ...refs.map(r => ({ _id: r._id, title: r.title, docType: 'reference' as const, updatedAt: r.updatedAt, topicIds: r.topicIds, url: r.url })),
   ];
 
   const getNavPath = (doc: DocEntry): string | null => {

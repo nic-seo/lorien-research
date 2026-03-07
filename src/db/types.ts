@@ -53,6 +53,10 @@ export interface Chat extends BaseDoc {
   title: string;
   messages: ChatMessage[];
   topicIds?: string[];
+  /** Haiku-generated summary covering messages[0..summaryUpToIndex-1]. */
+  summary?: string;
+  /** Index of the first message NOT yet covered by the summary. */
+  summaryUpToIndex?: number;
 }
 
 export type RefType = 'video' | 'blog' | 'paper' | 'link' | 'book' | 'podcast';

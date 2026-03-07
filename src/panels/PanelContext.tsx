@@ -17,6 +17,8 @@ interface PanelContextValue {
   getFirstPanelPath: () => string;
   navigatePanel: (path: string) => void;
   getPanelLocation: (panelId: string) => string;
+  getCurrentPaths: () => string[];
+  loadSession: (paths: string[]) => void;
   // Drag state (for panel reordering)
   draggedPanelId: string | null;
   dragOverPanelId: string | null;
@@ -38,6 +40,8 @@ const PanelContext = createContext<PanelContextValue>({
   getFirstPanelPath: () => '/',
   navigatePanel: () => {},
   getPanelLocation: () => '/',
+  getCurrentPaths: () => [],
+  loadSession: () => {},
   draggedPanelId: null,
   dragOverPanelId: null,
   dragOverPos: 'right',
@@ -157,6 +161,18 @@ export function PanelProvider({ initialPath, children }: PanelProviderProps) {
     return locationRefs.current.get(panelId) || '/';
   }, []);
 
+  // Return the live current path for every panel (used by SessionsMenu to capture state)
+  const getCurrentPaths = useCallback(() => {
+    return panelsRef.current.map(p => locationRefs.current.get(p.id) || p.initialPath);
+  }, []);
+
+  // Replace all panels with the given paths (used when loading a saved session)
+  const loadSession = useCallback((paths: string[]) => {
+    if (paths.length === 0) return;
+    const capped = paths.slice(0, 4);
+    setPanels(capped.map(path => ({ id: crypto.randomUUID(), initialPath: path })));
+  }, []);
+
   // Navigate the first panel (used by SearchOverlay)
   const navigatePanel = useCallback((path: string) => {
     const firstPanelId = panels[0]?.id;
@@ -212,6 +228,7 @@ export function PanelProvider({ initialPath, children }: PanelProviderProps) {
       panels, addPanel, closePanel, reorderPanels,
       registerNavigate, unregisterNavigate, reportLocation,
       getFirstPanelPath, navigatePanel, getPanelLocation,
+      getCurrentPaths, loadSession,
       draggedPanelId, dragOverPanelId, dragOverPos,
       startPanelDrag, updatePanelDragOver, dropOnPanel, endPanelDrag,
     }}>
