@@ -8,6 +8,9 @@ PouchDB.plugin(PouchDBFind);
 // Single database for all documents
 const db = new PouchDB<AnyDoc>('research-workspace');
 
+// Expose db globally for migration/debugging from DevTools console
+(window as any).__db = db;
+
 // Create indexes for common queries
 async function ensureIndexes() {
   await db.createIndex({ index: { fields: ['type'] } });

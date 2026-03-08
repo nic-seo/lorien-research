@@ -6,6 +6,10 @@ import { createServer, updateKeys } from '../server/index.js';
 
 let server: Server | null = null;
 
+// Fixed port keeps the localhost origin stable across launches so IndexedDB persists.
+// Chosen to avoid common dev ports; virtually never conflicts on a personal machine.
+const STABLE_PORT = 47321;
+
 async function findFreePort(): Promise<number> {
   return new Promise((resolve) => {
     const srv = net.createServer();
@@ -16,11 +20,23 @@ async function findFreePort(): Promise<number> {
   });
 }
 
+// Try the stable port first; fall back to a random free port only if something
+// else on the machine has already claimed it.
+async function getPort(): Promise<number> {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', async () => resolve(await findFreePort()));
+    srv.listen(STABLE_PORT, '127.0.0.1', () => {
+      srv.close(() => resolve(STABLE_PORT));
+    });
+  });
+}
+
 export async function startServer(config: {
   anthropicKey: string;
   braveKey: string;
 }): Promise<number> {
-  const port = await findFreePort();
+  const port = await getPort();
 
   // Determine paths based on whether we're packaged or in dev
   const isProd = app.isPackaged;
