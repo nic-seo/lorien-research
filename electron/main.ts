@@ -15,6 +15,8 @@ const isDev = !app.isPackaged;
 function setupAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  // App is not code-signed with an Apple Developer cert; skip macOS signature check
+  autoUpdater.verifyUpdateCodeSignature = false;
 
   autoUpdater.on('update-available', (info) => {
     console.log(`[updater] Update available: v${info.version}`);
