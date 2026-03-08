@@ -245,10 +245,16 @@ export async function importDocs(
   json: string
 ): Promise<{ imported: number; errors: number }> {
   const docs = JSON.parse(json);
-  // new_edits:false = true replication — preserves _id/_rev, no duplicates
+  // Strip _rev so PouchDB treats each doc as a new insert via the normal write
+  // path — this ensures indexes are properly updated (new_edits:false bypasses
+  // the index pipeline, causing find() queries to miss the imported docs).
+  // Docs with the same _id that already exist will return a 409 conflict, which
+  // we treat as "already present / skipped" rather than an error.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const results = await (db as any).bulkDocs(docs, { new_edits: false });
-  const errors = results.filter((r: { error?: boolean }) => r.error).length;
+  const stripped = docs.map(({ _rev: _, ...doc }: any) => doc);
+  const results = await db.bulkDocs(stripped);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const errors = results.filter((r: any) => r.error && r.status !== 409).length;
   return { imported: results.length - errors, errors };
 }
 
