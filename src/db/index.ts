@@ -231,4 +231,25 @@ export async function bulkCreate(docs: AnyDoc[]): Promise<void> {
   await db.bulkDocs(docs);
 }
 
+// --- Export / Import ---
+
+export async function exportDocs(): Promise<string> {
+  const result = await db.allDocs({ include_docs: true });
+  const docs = result.rows
+    .map(r => r.doc)
+    .filter(d => d && !d._id.startsWith('_design/'));
+  return JSON.stringify(docs, null, 2);
+}
+
+export async function importDocs(
+  json: string
+): Promise<{ imported: number; errors: number }> {
+  const docs = JSON.parse(json);
+  // new_edits:false = true replication — preserves _id/_rev, no duplicates
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const results = await (db as any).bulkDocs(docs, { new_edits: false });
+  const errors = results.filter((r: { error?: boolean }) => r.error).length;
+  return { imported: results.length - errors, errors };
+}
+
 export { db };

@@ -6,6 +6,10 @@ interface ElectronAPI {
   hasApiKeys: () => Promise<boolean>;
   getAppVersion: () => Promise<string>;
   checkForUpdates: () => Promise<{ status: string; version?: string; message?: string }>;
+  installUpdate: () => Promise<void>;
+  onUpdaterEvent: (
+    callback: (event: { type: string; version?: string; percent?: number; message?: string }) => void
+  ) => () => void;
 }
 
 interface Window {

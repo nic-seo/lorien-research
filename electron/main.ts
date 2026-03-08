@@ -18,26 +18,23 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-available', (info) => {
     console.log(`[updater] Update available: v${info.version}`);
+    mainWindow?.webContents.send('updater-event', { type: 'update-available', version: info.version });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    const percent = Math.round(progress.percent);
+    console.log(`[updater] Downloading: ${percent}%`);
+    mainWindow?.webContents.send('updater-event', { type: 'download-progress', percent });
   });
 
   autoUpdater.on('update-downloaded', (info) => {
     console.log(`[updater] Update downloaded: v${info.version}`);
-    dialog.showMessageBox(mainWindow!, {
-      type: 'info',
-      title: 'Update Ready',
-      message: `Version ${info.version} has been downloaded.`,
-      detail: 'It will be installed when you restart the app.',
-      buttons: ['Restart Now', 'Later'],
-      defaultId: 0,
-    }).then(({ response }) => {
-      if (response === 0) {
-        autoUpdater.quitAndInstall();
-      }
-    });
+    mainWindow?.webContents.send('updater-event', { type: 'update-downloaded', version: info.version });
   });
 
   autoUpdater.on('error', (err) => {
     console.error('[updater] Error:', err.message);
+    mainWindow?.webContents.send('updater-event', { type: 'error', message: err.message });
   });
 
   autoUpdater.checkForUpdatesAndNotify();
@@ -138,6 +135,10 @@ ipcMain.handle('has-api-keys', () => {
 
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
+});
+
+ipcMain.handle('install-update', () => {
+  autoUpdater.quitAndInstall();
 });
 
 ipcMain.handle('check-for-updates', async () => {

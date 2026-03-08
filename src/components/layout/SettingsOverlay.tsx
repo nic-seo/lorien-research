@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { exportDocs, importDocs } from '../../db';
 
 interface SettingsOverlayProps {
   onClose: () => void;
@@ -14,9 +15,12 @@ export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
   const [error, setError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
+  const [updateReady, setUpdateReady] = useState(false);
+  const [transferStatus, setTransferStatus] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
-  // Load existing keys on mount
+  // Load existing keys on mount + subscribe to updater events
   useEffect(() => {
     window.electronAPI?.getApiKeys().then(keys => {
       setAnthropicKey(keys.anthropicKey || '');
@@ -24,6 +28,20 @@ export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
     });
     window.electronAPI?.getAppVersion().then(v => setAppVersion(v || ''));
     inputRef.current?.focus();
+
+    const unsub = window.electronAPI?.onUpdaterEvent(event => {
+      if (event.type === 'update-available') {
+        setUpdateStatus(`Downloading v${event.version}…`);
+      } else if (event.type === 'download-progress') {
+        setUpdateStatus(`Downloading… ${event.percent}%`);
+      } else if (event.type === 'update-downloaded') {
+        setUpdateStatus(`v${event.version} ready to install`);
+        setUpdateReady(true);
+      } else if (event.type === 'error') {
+        setUpdateStatus(`Update error: ${event.message}`);
+      }
+    });
+    return () => unsub?.();
   }, []);
 
   const handleSave = async () => {
@@ -124,30 +142,103 @@ export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
             {saving ? 'Saving...' : saved ? 'Saved' : 'Save Keys'}
           </button>
 
-          {appVersion && (
-            <div className="settings-version">
-              <span className="settings-version-label">v{appVersion}</span>
+          <hr className="settings-divider" />
+
+          <div className="settings-field">
+            <label className="settings-label">Data</label>
+            <div className="settings-transfer-row">
               <button
-                className="settings-update-btn"
+                className="settings-transfer-btn"
                 onClick={async () => {
-                  setUpdateStatus('Checking...');
-                  const result = await window.electronAPI?.checkForUpdates();
-                  if (!result || result.status === 'dev') {
-                    setUpdateStatus('Dev mode — updates disabled');
-                  } else if (result.status === 'checked' && result.version) {
-                    setUpdateStatus(`Update available: v${result.version}`);
-                  } else if (result.status === 'checked') {
-                    setUpdateStatus('You\'re up to date');
-                  } else {
-                    setUpdateStatus(result.message || 'Check failed');
+                  setTransferStatus('Exporting…');
+                  try {
+                    const json = await exportDocs();
+                    const a = Object.assign(document.createElement('a'), {
+                      href: URL.createObjectURL(new Blob([json], { type: 'application/json' })),
+                      download: `lorien-export-${new Date().toISOString().slice(0, 10)}.json`,
+                    });
+                    a.click();
+                    setTransferStatus('Exported ✓');
+                  } catch (e) {
+                    setTransferStatus(`Export failed: ${e instanceof Error ? e.message : e}`);
                   }
-                  setTimeout(() => setUpdateStatus(''), 5000);
+                  setTimeout(() => setTransferStatus(''), 4000);
                 }}
               >
-                Check for updates
+                Export data
               </button>
-              {updateStatus && <span className="settings-update-status">{updateStatus}</span>}
+              <button
+                className="settings-transfer-btn"
+                onClick={() => importInputRef.current?.click()}
+              >
+                Import data
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".json"
+                style={{ display: 'none' }}
+                onChange={async e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setTransferStatus('Importing…');
+                  try {
+                    const text = await file.text();
+                    const { imported, errors } = await importDocs(text);
+                    setTransferStatus(`Imported ${imported} docs${errors ? `, ${errors} errors` : ' ✓'}`);
+                    setTimeout(() => { setTransferStatus(''); location.reload(); }, 1500);
+                  } catch (e) {
+                    setTransferStatus(`Import failed: ${e instanceof Error ? e.message : e}`);
+                    setTimeout(() => setTransferStatus(''), 4000);
+                  }
+                  e.target.value = '';
+                }}
+              />
             </div>
+            {transferStatus && <p className="settings-hint">{transferStatus}</p>}
+          </div>
+
+          {appVersion && (
+            <>
+              <hr className="settings-divider" />
+              <div className="settings-field">
+                <label className="settings-label">Updates</label>
+                <div className="settings-version">
+                  <span className="settings-version-label">v{appVersion}</span>
+                  {updateReady ? (
+                    <button
+                      className="settings-update-btn settings-update-ready"
+                      onClick={() => window.electronAPI?.installUpdate()}
+                    >
+                      Restart to update
+                    </button>
+                  ) : (
+                    <button
+                      className="settings-update-btn"
+                      onClick={async () => {
+                        setUpdateStatus('Checking…');
+                        const result = await window.electronAPI?.checkForUpdates();
+                        if (!result || result.status === 'dev') {
+                          setUpdateStatus('Dev mode — updates disabled');
+                          setTimeout(() => setUpdateStatus(''), 4000);
+                        } else if (result.status === 'checked' && result.version) {
+                          setUpdateStatus(`Downloading v${result.version}…`);
+                        } else if (result.status === 'checked') {
+                          setUpdateStatus('You\'re up to date');
+                          setTimeout(() => setUpdateStatus(''), 4000);
+                        } else {
+                          setUpdateStatus(result.message || 'Check failed');
+                          setTimeout(() => setUpdateStatus(''), 4000);
+                        }
+                      }}
+                    >
+                      Check for updates
+                    </button>
+                  )}
+                  {updateStatus && <span className="settings-update-status">{updateStatus}</span>}
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

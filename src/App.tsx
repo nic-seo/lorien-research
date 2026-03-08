@@ -55,22 +55,22 @@ function AppLayout() {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   }, []);
 
-  // Keyboard shortcuts: Cmd+K search, Ctrl+P new panel
+  // Keyboard shortcuts: Ctrl+/ search, Ctrl+. lookup, Ctrl+P new panel
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      if (e.ctrlKey && e.code === 'Slash') {
         e.preventDefault();
         setSearchOpen(prev => !prev);
       }
-      if (e.ctrlKey && e.key === 'q') {
+      if (e.ctrlKey && e.code === 'KeyQ') {
         e.preventDefault();
         setQueueOpen(prev => !prev);
       }
-      if (e.ctrlKey && e.key === '/') {
+      if (e.ctrlKey && e.code === 'Period') {
         e.preventDefault();
         setLookupOpen(prev => !prev);
       }
-      if (e.ctrlKey && e.key === 'p') {
+      if (e.ctrlKey && e.code === 'KeyP') {
         e.preventDefault();
         // Open new panel at current project, or overview if not on a project page
         const currentPath = getFirstPanelPath();

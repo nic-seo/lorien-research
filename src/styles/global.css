@@ -1085,9 +1085,18 @@ h3.subsection-title {
   border-color: var(--accent);
   color: var(--accent);
 }
+.topbar-search-action {
+  min-width: 140px;
+  justify-content: space-between;
+}
+.topbar-search-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
 .topbar-search-hint {
   font-size: 11px;
   color: var(--text-secondary);
+  margin-left: auto;
 }
 
 /* ===== Sessions menu ===== */
@@ -3024,15 +3033,37 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  margin-top: 8px;
   font-size: 0.8rem;
   color: var(--text-muted);
   flex-wrap: wrap;
 }
 .settings-version-label {
   opacity: 0.7;
+}
+.settings-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 20px 0 4px;
+}
+.settings-transfer-row {
+  display: flex;
+  gap: 8px;
+}
+.settings-transfer-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.settings-transfer-btn:hover {
+  border-color: var(--blue);
+  color: var(--text);
 }
 .settings-update-btn {
   background: none;
@@ -3048,6 +3079,14 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .settings-update-btn:hover {
   border-color: var(--pink);
   color: var(--text);
+}
+.settings-update-ready {
+  border-color: var(--green);
+  color: var(--text);
+}
+.settings-update-ready:hover {
+  background: var(--green);
+  border-color: var(--green);
 }
 .settings-update-status {
   font-size: 0.75rem;

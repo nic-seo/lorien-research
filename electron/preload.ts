@@ -20,4 +20,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   checkForUpdates: (): Promise<{ status: string; version?: string; message?: string }> =>
     ipcRenderer.invoke('check-for-updates'),
+
+  installUpdate: (): Promise<void> =>
+    ipcRenderer.invoke('install-update'),
+
+  onUpdaterEvent: (callback: (event: { type: string; version?: string; percent?: number; message?: string }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, data: Parameters<typeof callback>[0]) => callback(data);
+    ipcRenderer.on('updater-event', handler);
+    return () => ipcRenderer.off('updater-event', handler);
+  },
 });

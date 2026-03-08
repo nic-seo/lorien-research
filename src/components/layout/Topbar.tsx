@@ -1,3 +1,4 @@
+import { Search, Sun, Moon, Settings } from 'lucide-react';
 import SessionsMenu from './SessionsMenu';
 
 interface TopbarProps {
@@ -19,18 +20,19 @@ export default function Topbar({ onSearchOpen, onSettingsOpen, theme, onThemeTog
 
       <SessionsMenu />
 
-      <button className="topbar-action" onClick={onSearchOpen} title="Search (⌘K)">
-        <span>⌕</span>
-        <span className="topbar-search-hint">Search… ⌘K</span>
+      <button className="topbar-action topbar-search-action" onClick={onSearchOpen} title="Search (⌃/)">
+        <Search size={14} />
+        <span className="topbar-search-label">Search…</span>
+        <span className="topbar-search-hint">⌃/</span>
       </button>
 
       <button className="topbar-action" onClick={onThemeToggle} title="Toggle theme">
-        {theme === 'light' ? '◐' : '◑'}
+        {theme === 'light' ? <Sun size={14} /> : <Moon size={14} />}
       </button>
 
       {window.electronAPI?.isElectron && onSettingsOpen && (
         <button className="topbar-action" onClick={onSettingsOpen} title="Settings">
-          ⚙
+          <Settings size={14} />
         </button>
       )}
     </header>
