@@ -32,7 +32,7 @@ export default function Overview() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2 className="page-title">Overview</h2>
+        <h2 className="page-title">Projects</h2>
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>
           + New Project
         </button>
