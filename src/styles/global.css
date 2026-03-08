@@ -894,7 +894,7 @@ h3.subsection-title {
   color: #fff;
   border-color: var(--accent);
 }
-.btn-primary:hover { opacity: 0.9; color: #fff; }
+.btn-primary:hover { background: var(--accent-dark, color-mix(in srgb, var(--accent) 85%, #000)); border-color: var(--accent-dark, color-mix(in srgb, var(--accent) 85%, #000)); color: #fff; }
 
 /* Color-coordinated primary buttons inside tab content */
 .tab-content-pink .btn-primary  { background: #a06078; border-color: #a06078; }
