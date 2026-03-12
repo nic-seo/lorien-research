@@ -2469,17 +2469,24 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   color: var(--text-secondary);
   font-size: 13px;
 }
-.chat-message {
+.chat-message-wrap {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
   max-width: 85%;
+}
+.chat-message-wrap-user {
+  align-self: flex-end;
+  max-width: 60%;
+}
+.chat-message {
   line-height: 1.7;
 }
 .chat-message-assistant {
   align-self: flex-start;
 }
 .chat-message-user {
-  align-self: flex-end;
   text-align: left;
-  max-width: 60%;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 12px;
@@ -2575,6 +2582,33 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   border-radius: 4px;
 }
 [data-theme="dark"] .chat-error { color: var(--coral); }
+/* Research trace toggle — collapsed after response arrives */
+.chat-trace-toggle {
+  margin-bottom: 4px;
+}
+.chat-trace-summary {
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.chat-trace-summary::-webkit-details-marker { display: none; }
+.chat-trace-summary::before {
+  content: '▸';
+  font-size: 9px;
+  transition: transform 0.15s ease;
+}
+.chat-trace-toggle[open] > .chat-trace-summary::before {
+  transform: rotate(90deg);
+}
+.chat-trace-toggle .chat-trace {
+  margin-top: 4px;
+}
+
 /* Research trace — shown while the assistant is doing web searches/reads */
 .chat-trace {
   margin-top: 10px;
@@ -2607,6 +2641,107 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   from { opacity: 0; transform: translateY(2px); }
   to   { opacity: 0.75; transform: translateY(0); }
 }
+
+/* --- Proposed note edits --- */
+.chat-edit-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.chat-edit-proposal {
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  animation: trace-fade-in 0.2s ease;
+}
+.chat-edit-proposal.chat-edit-accepted {
+  border-color: var(--green);
+  opacity: 0.7;
+}
+.chat-edit-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.chat-edit-icon {
+  flex-shrink: 0;
+}
+.chat-edit-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-edit-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--green);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.chat-edit-diff {
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+.chat-edit-old {
+  background: rgba(224, 100, 100, 0.1);
+  border-left: 2px solid #e06464;
+  padding: 4px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 2px;
+}
+.chat-edit-arrow {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 2px 0;
+}
+.chat-edit-new {
+  background: rgba(100, 180, 100, 0.1);
+  border-left: 2px solid #64b464;
+  padding: 4px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 2px;
+}
+.chat-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+.chat-edit-accept,
+.chat-edit-reject {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border-light);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.chat-edit-accept {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+.chat-edit-accept:hover {
+  opacity: 0.85;
+}
+.chat-edit-reject {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.chat-edit-reject:hover {
+  border-color: var(--text-secondary);
+}
+
 .chat-input-area {
   flex-shrink: 0;
   padding-top: 12px;

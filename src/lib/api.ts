@@ -79,22 +79,39 @@ export async function quickQuestion(
   return response.json();
 }
 
+export interface LinkedNoteInput {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface NoteEdit {
+  noteId: string;
+  noteTitle: string;
+  oldText: string;
+  newText: string;
+}
+
 export interface SendChatResult {
   content: string;
   /** Updated summary if old messages were compressed during this request. */
   newSummary?: string;
   /** Number of messages (from the slice sent) that are now covered by newSummary. */
   summarizedCount?: number;
+  /** Proposed note edits that require user confirmation before applying. */
+  pendingEdits?: NoteEdit[];
 }
 
 export interface ChatToolEvent {
   type: 'tool';
-  tool: 'web_search' | 'read_page';
+  tool: 'web_search' | 'read_page' | 'read_note' | 'edit_note';
   /** Populated when tool === 'web_search' */
   query?: string;
   /** Populated when tool === 'read_page' */
   url?: string;
   domain?: string;
+  /** Populated when tool === 'read_note' or 'edit_note' */
+  noteTitle?: string;
 }
 
 export async function sendChatMessage(
@@ -102,11 +119,12 @@ export async function sendChatMessage(
   projectContext: ProjectContext,
   summary?: string,
   onTool?: (event: ChatToolEvent) => void,
+  linkedNotes?: LinkedNoteInput[],
 ): Promise<SendChatResult> {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, projectContext, summary }),
+    body: JSON.stringify({ messages, projectContext, summary, linkedNotes }),
     // Chat may do 1-2 web searches before responding
     signal: AbortSignal.timeout(2 * 60 * 1000),
   });
@@ -147,6 +165,7 @@ export async function sendChatMessage(
           content: event.content as string,
           newSummary: event.newSummary as string | undefined,
           summarizedCount: event.summarizedCount as number | undefined,
+          pendingEdits: event.pendingEdits as NoteEdit[] | undefined,
         };
       } else if (event.type === 'error') {
         throw new Error(event.message as string);

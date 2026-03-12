@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { marked } from 'marked';
-import { useDoc, useProjectDocs } from '../../db/hooks';
-import { updateDoc } from '../../db';
+import { useDoc, useProjectDocs, useLinks } from '../../db/hooks';
+import { updateDoc, getDoc } from '../../db';
 import { sendChatMessage, generateChatTitle } from '../../lib/api';
-import type { ChatToolEvent } from '../../lib/api';
-import type { Chat, ChatMessage, Project, Report } from '../../db/types';
+import type { ChatToolEvent, LinkedNoteInput, NoteEdit } from '../../lib/api';
+import type { Chat, ChatMessage, Project, Report, Note } from '../../db/types';
 import DocHeader from './DocHeader';
 
 marked.setOptions({ breaks: true });
@@ -16,11 +16,14 @@ export default function ChatView() {
   const { doc: chat } = useDoc<Chat>(chatId || null);
   const { doc: project } = useDoc<Project>(projectId || null);
   const { docs: reports } = useProjectDocs<Report>('report', projectId || null);
+  const { links } = useLinks(chatId || null);
 
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toolTrace, setToolTrace] = useState<ChatToolEvent[]>([]);
+  const [pendingEdits, setPendingEdits] = useState<(NoteEdit & { _messageIndex: number; _accepted?: boolean; _rejected?: boolean })[]>([]);
+  const [savedTraces, setSavedTraces] = useState<Record<number, ChatToolEvent[]>>({});
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -109,11 +112,29 @@ export default function ChatView() {
         reportTitles: reports.map((r) => r.title),
       };
 
+      // Fetch linked note content to send with the request
+      const noteLinks = links.filter((l) => l.docType === 'note');
+      let linkedNotes: LinkedNoteInput[] | undefined;
+      if (noteLinks.length > 0) {
+        const noteResults = await Promise.all(
+          noteLinks.map(async (link) => {
+            try {
+              const note = await getDoc<Note>(link.docId);
+              return { id: note._id, title: note.title, content: note.content };
+            } catch {
+              return null;
+            }
+          })
+        );
+        linkedNotes = noteResults.filter(Boolean) as LinkedNoteInput[];
+      }
+
       const response = await sendChatMessage(
         apiMessages,
         projectContext,
         chat.summary,
         (event) => setToolTrace((prev) => [...prev, event]),
+        linkedNotes,
       );
 
       const assistantMessage: ChatMessage = {
@@ -134,11 +155,26 @@ export default function ChatView() {
       }
 
       await updateDoc<Chat>(chatId, docUpdates);
+
+      // Save tool trace and proposed edits, anchored to this assistant message
+      const msgIndex = updatedMessages.length; // index of the assistant message just added
+      if (response.pendingEdits && response.pendingEdits.length > 0) {
+        setPendingEdits((prev) => [
+          ...prev,
+          ...response.pendingEdits!.map((e) => ({ ...e, _messageIndex: msgIndex })),
+        ]);
+      }
+      // Persist trace for this message so it survives after sending ends
+      setToolTrace((trace) => {
+        if (trace.length > 0) {
+          setSavedTraces((prev) => ({ ...prev, [msgIndex]: trace }));
+        }
+        return [];
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get response.');
     } finally {
       setSending(false);
-      setToolTrace([]);
     }
   };
 
@@ -147,6 +183,30 @@ export default function ChatView() {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const handleAcceptEdit = async (index: number) => {
+    const edit = pendingEdits[index];
+    try {
+      const note = await getDoc<Note>(edit.noteId);
+      if (!note.content.includes(edit.oldText)) {
+        setError(`Edit failed: the note "${edit.noteTitle}" has changed since this edit was proposed.`);
+        return;
+      }
+      const updatedContent = note.content.replace(edit.oldText, edit.newText);
+      await updateDoc<Note>(edit.noteId, { content: updatedContent });
+      setPendingEdits((prev) => prev.map((e, i) =>
+        i === index ? { ...e, _accepted: true } : e
+      ));
+    } catch {
+      setError(`Failed to apply edit to "${edit.noteTitle}".`);
+    }
+  };
+
+  const handleRejectEdit = (index: number) => {
+    setPendingEdits((prev) => prev.map((e, i) =>
+      i === index ? { ...e, _rejected: true } : e
+    ));
   };
 
   if (!chat) return <div className="page-loading">Loading…</div>;
@@ -169,21 +229,91 @@ export default function ChatView() {
             <div className="chat-empty">Start a conversation…</div>
           )}
 
-          {chat.messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`chat-message ${msg.role === 'user' ? 'chat-message-user' : 'chat-message-assistant'}`}
-            >
-              {msg.role === 'assistant' ? (
+          {chat.messages.map((msg, i) => {
+            const editsForMessage = pendingEdits
+              .map((e, idx) => ({ ...e, _globalIndex: idx }))
+              .filter((e) => e._messageIndex === i && !e._rejected);
+            const trace = savedTraces[i];
+
+            return (
+              <div key={i} className={`chat-message-wrap ${msg.role === 'user' ? 'chat-message-wrap-user' : ''}`}>
+                {trace && trace.length > 0 && (
+                  <details className="chat-trace-toggle">
+                    <summary className="chat-trace-summary">
+                      {trace.length} tool {trace.length === 1 ? 'call' : 'calls'}
+                    </summary>
+                    <div className="chat-trace">
+                      {trace.map((event, j) => (
+                        <div key={j} className="chat-trace-item">
+                          <span className="chat-trace-icon">
+                            {event.tool === 'web_search' ? '⌕' :
+                             event.tool === 'read_note' ? '📖' :
+                             event.tool === 'edit_note' ? '✏️' : '↗'}
+                          </span>
+                          <span className="chat-trace-label">
+                            {event.tool === 'web_search'
+                              ? event.query
+                              : event.tool === 'read_note' || event.tool === 'edit_note'
+                              ? event.noteTitle
+                              : event.domain ?? event.url}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
                 <div
-                  className="chat-message-content chat-message-md"
-                  dangerouslySetInnerHTML={{ __html: marked(msg.content) as string }}
-                />
-              ) : (
-                <div className="chat-message-content">{msg.content}</div>
-              )}
-            </div>
-          ))}
+                  className={`chat-message ${msg.role === 'user' ? 'chat-message-user' : 'chat-message-assistant'}`}
+                >
+                  {msg.role === 'assistant' ? (
+                    <div
+                      className="chat-message-content chat-message-md"
+                      dangerouslySetInnerHTML={{ __html: marked(msg.content) as string }}
+                    />
+                  ) : (
+                    <div className="chat-message-content">{msg.content}</div>
+                  )}
+                </div>
+
+                {editsForMessage.length > 0 && (
+                  <div className="chat-edit-proposals">
+                    {editsForMessage.map((edit) => (
+                      <div key={edit._globalIndex} className={`chat-edit-proposal ${edit._accepted ? 'chat-edit-accepted' : ''}`}>
+                        <div className="chat-edit-header">
+                          <span className="chat-edit-icon">✏️</span>
+                          <span className="chat-edit-title">{edit.noteTitle}</span>
+                          {edit._accepted && <span className="chat-edit-badge">Applied</span>}
+                        </div>
+                        {!edit._accepted && (
+                          <>
+                            <div className="chat-edit-diff">
+                              <div className="chat-edit-old">{edit.oldText}</div>
+                              <div className="chat-edit-arrow">→</div>
+                              <div className="chat-edit-new">{edit.newText}</div>
+                            </div>
+                            <div className="chat-edit-actions">
+                              <button
+                                className="chat-edit-accept"
+                                onClick={() => handleAcceptEdit(edit._globalIndex)}
+                              >
+                                Accept
+                              </button>
+                              <button
+                                className="chat-edit-reject"
+                                onClick={() => handleRejectEdit(edit._globalIndex)}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {sending && (
             <div className="chat-message chat-message-assistant">
@@ -197,11 +327,15 @@ export default function ChatView() {
                   {toolTrace.map((event, i) => (
                     <div key={i} className="chat-trace-item">
                       <span className="chat-trace-icon">
-                        {event.tool === 'web_search' ? '⌕' : '↗'}
+                        {event.tool === 'web_search' ? '⌕' :
+                         event.tool === 'read_note' ? '📖' :
+                         event.tool === 'edit_note' ? '✏️' : '↗'}
                       </span>
                       <span className="chat-trace-label">
                         {event.tool === 'web_search'
                           ? event.query
+                          : event.tool === 'read_note' || event.tool === 'edit_note'
+                          ? event.noteTitle
                           : event.domain ?? event.url}
                       </span>
                     </div>

@@ -62,15 +62,21 @@ export default function NoteView() {
     },
   });
 
-  // Sync local state when note loads
+  // Sync local state when note loads or is updated externally (e.g. chat edit)
   useEffect(() => {
     if (note && editor) {
-      setTitle(note.title);
-      titleRef.current = note.title;
-      contentRef.current = note.content;
-      editor.commands.setContent(note.content);
+      // Only update the editor if the content actually changed (avoids
+      // clobbering in-progress typing when _rev changes from our own saves).
+      if (contentRef.current !== note.content) {
+        contentRef.current = note.content;
+        editor.commands.setContent(note.content);
+      }
+      if (titleRef.current !== note.title) {
+        setTitle(note.title);
+        titleRef.current = note.title;
+      }
     }
-  }, [note?._id, editor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [note?._rev, editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flush pending save on unmount
   useEffect(() => {

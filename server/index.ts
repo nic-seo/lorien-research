@@ -381,10 +381,11 @@ export function createServer(port: number, options?: {
   app.post('/api/chat', async (req: express.Request, res: express.Response) => {
     if (!requireApiKey(res)) return;
 
-    const { messages, projectContext, summary: existingSummary } = req.body as {
+    const { messages, projectContext, summary: existingSummary, linkedNotes } = req.body as {
       messages?: { role: string; content: string }[];
       projectContext?: { title: string; description: string; reportTitles: string[] };
       summary?: string;
+      linkedNotes?: { id: string; title: string; content: string }[];
     };
 
     // Validate before SSE headers so we can return a plain JSON error
@@ -443,7 +444,65 @@ export function createServer(port: number, options?: {
     systemPrompt += `\n\nHelp the user explore this topic. Be concise, direct, and useful. When referencing reports, mention them by title. You can suggest new research directions, answer questions about the topic, and help the user think through their research.`;
     systemPrompt += `\n\nYou have access to web_search and read_page tools. Use them when the user asks about current events, recent developments, or anything that benefits from up-to-date information. For general knowledge questions you can answer confidently, respond directly without searching. Keep searches focused — 1-2 searches is usually enough for a chat response.`;
 
-    console.log(`[chat] Project "${projectContext.title}" — ${messages.length} messages, summary: ${existingSummary ? existingSummary.length + ' chars' : 'none'}`);
+    // Build note context map for read_note / edit_note tools
+    const noteMap = new Map<string, { id: string; title: string; content: string }>();
+    const pendingEdits: { noteId: string; noteTitle: string; oldText: string; newText: string }[] = [];
+
+    if (linkedNotes && linkedNotes.length > 0) {
+      for (const note of linkedNotes) {
+        noteMap.set(note.id, { ...note });
+      }
+      systemPrompt += `\n\nLinked notes available (use read_note to view their content):\n${linkedNotes.map((n) => `- "${n.title}" (id: ${n.id})`).join('\n')}`;
+      systemPrompt += `\n\nIMPORTANT: Only use edit_note when the user explicitly asks you to modify, update, or add content to a note. Never proactively edit notes — reading them to inform your answers is fine, but changes require a clear user request.`;
+    }
+
+    // Build tool set: always include web tools, add note tools when linked notes exist
+    const chatTools: Anthropic.Messages.Tool[] = [...TOOLS];
+    if (noteMap.size > 0) {
+      chatTools.push(
+        {
+          name: 'read_note',
+          description:
+            'Read the full markdown content of a linked note. Use this when the user asks about a note or you need to understand its content before editing.',
+          input_schema: {
+            type: 'object' as const,
+            properties: {
+              noteId: {
+                type: 'string',
+                description: 'The ID of the note to read.',
+              },
+            },
+            required: ['noteId'],
+          },
+        },
+        {
+          name: 'edit_note',
+          description:
+            'Propose a targeted edit to a linked note using search-and-replace. The edit will be shown to the user for confirmation before being applied. ' +
+            'Use read_note first to see the current content, then use this tool to suggest specific changes.',
+          input_schema: {
+            type: 'object' as const,
+            properties: {
+              noteId: {
+                type: 'string',
+                description: 'The ID of the note to edit.',
+              },
+              old_text: {
+                type: 'string',
+                description: 'The exact text in the note to be replaced. Must match verbatim.',
+              },
+              new_text: {
+                type: 'string',
+                description: 'The replacement text.',
+              },
+            },
+            required: ['noteId', 'old_text', 'new_text'],
+          },
+        },
+      );
+    }
+
+    console.log(`[chat] Project "${projectContext.title}" — ${messages.length} messages, summary: ${existingSummary ? existingSummary.length + ' chars' : 'none'}, linked notes: ${noteMap.size}`);
 
     try {
       // --- History management ---
@@ -522,7 +581,7 @@ export function createServer(port: number, options?: {
             model: 'claude-sonnet-4-6',
             max_tokens: 4096,
             system: systemPrompt,
-            tools: TOOLS,
+            tools: chatTools,
             messages: chatMessages,
           },
           { timeout: 90_000 } // 90s per call — prevents silent hangs
@@ -557,6 +616,12 @@ export function createServer(port: number, options?: {
               let domain = url;
               try { domain = new URL(url).hostname; } catch { /* keep raw url */ }
               emit({ type: 'tool', tool: 'read_page', url, domain });
+            } else if (block.name === 'read_note') {
+              const note = noteMap.get(input.noteId as string);
+              emit({ type: 'tool', tool: 'read_note', noteTitle: note?.title ?? input.noteId as string });
+            } else if (block.name === 'edit_note') {
+              const note = noteMap.get(input.noteId as string);
+              emit({ type: 'tool', tool: 'edit_note', noteTitle: note?.title ?? input.noteId as string });
             }
 
             let result: string;
@@ -567,6 +632,30 @@ export function createServer(port: number, options?: {
               );
             } else if (block.name === 'read_page') {
               result = await executeReadPage(input.url as string);
+            } else if (block.name === 'read_note') {
+              const note = noteMap.get(input.noteId as string);
+              if (!note) {
+                result = `Error: Note with id "${input.noteId}" not found. Available notes: ${[...noteMap.keys()].join(', ')}`;
+              } else {
+                result = note.content || '(empty note)';
+              }
+            } else if (block.name === 'edit_note') {
+              const note = noteMap.get(input.noteId as string);
+              if (!note) {
+                result = `Error: Note with id "${input.noteId}" not found.`;
+              } else if (!note.content.includes(input.old_text as string)) {
+                result = `Error: Could not find the text to replace. Make sure old_text matches the note content exactly. Use read_note first to see the current content.`;
+              } else {
+                // Apply edit to in-memory copy so subsequent reads see the updated version
+                note.content = note.content.replace(input.old_text as string, input.new_text as string);
+                pendingEdits.push({
+                  noteId: note.id,
+                  noteTitle: note.title,
+                  oldText: input.old_text as string,
+                  newText: input.new_text as string,
+                });
+                result = `Edit proposed successfully. The user will be asked to confirm before it's applied.`;
+              }
             } else {
               result = `Unknown tool: ${block.name}`;
             }
@@ -612,6 +701,7 @@ export function createServer(port: number, options?: {
         ...(newSummary != null && summarizedCount != null
           ? { newSummary, summarizedCount }
           : {}),
+        ...(pendingEdits.length > 0 ? { pendingEdits } : {}),
       });
       res.end();
     } catch (err: unknown) {
