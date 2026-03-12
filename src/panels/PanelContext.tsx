@@ -62,7 +62,7 @@ const STORAGE_KEY = 'lorien-panel-paths';
 
 function loadSavedPaths(): string[] | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const paths = JSON.parse(raw);
     if (Array.isArray(paths) && paths.length > 0 && paths.every(p => typeof p === 'string')) {
@@ -74,7 +74,7 @@ function loadSavedPaths(): string[] | null {
 
 function savePaths(paths: string[]) {
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(paths));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(paths));
   } catch {}
 }
 

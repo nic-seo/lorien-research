@@ -1,7 +1,7 @@
 /* Japanese Highlighter Design System
    IBM Plex Mono · Zebra Mildliner palette · Warm, muted tones */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Crimson+Text:ital,wght@0,400;0,600;1,400;1,600&display=swap');
 
 :root {
   --bg: #faf8f5;
@@ -69,10 +69,46 @@
   --h2-underline: var(--pink);
 }
 
+/* ===== Typography: serif mode ===== */
+[data-font="serif"] {
+  --font-body: 'Crimson Text', Georgia, 'Times New Roman', serif;
+}
+[data-font="serif"] body {
+  font-size: 16px;
+  line-height: 1.7;
+  letter-spacing: 0.01em;
+}
+/* Scale up content reading areas for Crimson Text */
+[data-font="serif"] .page-title { font-size: 21px; }
+[data-font="serif"] .page-description { font-size: 15px; }
+[data-font="serif"] .section-title { font-size: 21px; }
+[data-font="serif"] h3.subsection-title { font-size: 17px; }
+
+[data-font="serif"] .card-title { font-size: 16px; }
+[data-font="serif"] .card p,
+[data-font="serif"] .card-desc,
+[data-font="serif"] .card-description { font-size: 14px; }
+
+[data-font="serif"] .list-item-title { font-size: 15px; }
+[data-font="serif"] .queue-item-text { font-size: 14px; }
+
+[data-font="serif"] .note-body { font-size: 16px; line-height: 1.75; }
+[data-font="serif"] .note-body h1 { font-size: 22px; }
+[data-font="serif"] .note-body h2 { font-size: 19px; }
+[data-font="serif"] .note-body h3 { font-size: 17px; }
+[data-font="serif"] .note-body code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+}
+
+[data-font="serif"] .chat-title-text { font-size: 19px; }
+[data-font="serif"] .chat-message-content { font-size: 16px; line-height: 1.65; }
+[data-font="serif"] .chat-message-assistant .chat-message-content { font-size: 15px; }
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: 'IBM Plex Mono', 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-body, 'IBM Plex Mono', 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', monospace);
   background: var(--bg);
   color: var(--text);
   line-height: 1.75;
@@ -1085,6 +1121,11 @@ h3.subsection-title {
   border-color: var(--accent);
   color: var(--accent);
 }
+.topbar-font-toggle {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0;
+}
 .topbar-search-action {
   min-width: 140px;
   justify-content: space-between;
@@ -1640,6 +1681,9 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   background: var(--accent-light);
 }
 .doc-header-back + .doc-header-close {
+  margin-left: auto;
+}
+.doc-header-back + .panel-drag-handle {
   margin-left: auto;
 }
 

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs';
 import { autoUpdater } from 'electron-updater';
 import { getKey, setKey, hasKeys } from './key-store.js';
 import { startServer, updateServerKeys, stopServer } from './server-bridge.js';
@@ -141,6 +142,21 @@ ipcMain.handle('get-app-version', () => {
 
 ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall();
+});
+
+// --- Sessions file storage (persists across port/origin changes) ---
+
+const sessionsPath = path.join(app.getPath('userData'), 'sessions.json');
+
+ipcMain.handle('load-sessions', () => {
+  try {
+    if (!fs.existsSync(sessionsPath)) return '[]';
+    return fs.readFileSync(sessionsPath, 'utf-8');
+  } catch { return '[]'; }
+});
+
+ipcMain.handle('save-sessions', (_event, json: string) => {
+  try { fs.writeFileSync(sessionsPath, json, 'utf-8'); } catch {}
 });
 
 ipcMain.handle('check-for-updates', async () => {

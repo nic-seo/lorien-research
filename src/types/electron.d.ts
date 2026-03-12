@@ -10,6 +10,8 @@ interface ElectronAPI {
   onUpdaterEvent: (
     callback: (event: { type: string; version?: string; percent?: number; message?: string }) => void
   ) => () => void;
+  loadSessions: () => Promise<string>;
+  saveSessions: (json: string) => Promise<void>;
 }
 
 interface Window {

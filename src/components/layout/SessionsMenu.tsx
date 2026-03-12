@@ -13,6 +13,8 @@ interface SavedSession {
 const SESSIONS_KEY = 'lorien-sessions';
 const ACTIVE_SESSION_KEY = 'lorien-active-session';
 
+const isElectron = !!window.electronAPI?.loadSessions;
+
 function loadSessions(): SavedSession[] {
   try {
     const raw = localStorage.getItem(SESSIONS_KEY);
@@ -22,7 +24,9 @@ function loadSessions(): SavedSession[] {
 }
 
 function storeSessions(sessions: SavedSession[]) {
-  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions)); } catch {}
+  const json = JSON.stringify(sessions);
+  try { localStorage.setItem(SESSIONS_KEY, json); } catch {}
+  if (isElectron) window.electronAPI!.saveSessions(json);
 }
 
 function loadActiveId(): string | null {
@@ -39,6 +43,20 @@ export default function SessionsMenu() {
   const [open, setOpen] = useState(false);
   const [sessions, setSessions] = useState<SavedSession[]>(() => loadSessions());
   const [activeId, setActiveId] = useState<string | null>(() => loadActiveId());
+
+  // On mount in Electron, load from file (overrides localStorage which may be stale)
+  useEffect(() => {
+    if (!isElectron) return;
+    window.electronAPI!.loadSessions().then(json => {
+      try {
+        const loaded = JSON.parse(json) as SavedSession[];
+        if (loaded.length > 0) {
+          setSessions(loaded);
+          localStorage.setItem(SESSIONS_KEY, json);
+        }
+      } catch {}
+    });
+  }, []);
   const [nameInput, setNameInput] = useState('');
 
   const menuRef = useRef<HTMLDivElement>(null);

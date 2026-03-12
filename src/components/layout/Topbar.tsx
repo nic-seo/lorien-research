@@ -6,9 +6,11 @@ interface TopbarProps {
   onSettingsOpen?: () => void;
   theme: 'light' | 'dark';
   onThemeToggle: () => void;
+  font: 'mono' | 'serif';
+  onFontToggle: () => void;
 }
 
-export default function Topbar({ onSearchOpen, onSettingsOpen, theme, onThemeToggle }: TopbarProps) {
+export default function Topbar({ onSearchOpen, onSettingsOpen, theme, onThemeToggle, font, onFontToggle }: TopbarProps) {
   const isElectron = !!window.electronAPI?.isElectron;
 
   return (
@@ -24,6 +26,10 @@ export default function Topbar({ onSearchOpen, onSettingsOpen, theme, onThemeTog
         <Search size={14} />
         <span className="topbar-search-label">Search…</span>
         <span className="topbar-search-hint">⌃/</span>
+      </button>
+
+      <button className="topbar-action topbar-font-toggle" onClick={onFontToggle} title={`Switch to ${font === 'mono' ? 'serif' : 'mono'}`}>
+        {font === 'mono' ? 'Aa' : 'Ff'}
       </button>
 
       <button className="topbar-action" onClick={onThemeToggle} title="Toggle theme">

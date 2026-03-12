@@ -100,7 +100,31 @@ export default function ReportView() {
   const [shadowRoot, setShadowRoot] = useState<ShadowRoot | null>(null);
 
   // Sync dark-mode from <html data-theme> → shadow host + push CSS variables
+  // Also sync font mode from <html data-font> → shadow DOM font override
   const themeStyleRef = useRef<HTMLStyleElement | null>(null);
+  const fontStyleRef = useRef<HTMLStyleElement | null>(null);
+
+  function buildFontCSS(): string {
+    const isSerif = document.documentElement.getAttribute('data-font') === 'serif';
+    if (!isSerif) return '';
+    return `
+      :host {
+        font-family: 'Crimson Text', Georgia, 'Times New Roman', serif !important;
+        font-size: 16px !important;
+        line-height: 1.7 !important;
+      }
+      :host h1, :host h2, :host h3, :host h4 {
+        font-family: 'Crimson Text', Georgia, 'Times New Roman', serif !important;
+      }
+      :host p, :host li, :host blockquote, :host td, :host th {
+        font-family: 'Crimson Text', Georgia, 'Times New Roman', serif !important;
+        font-size: 16px !important;
+      }
+      :host code, :host pre {
+        font-family: 'IBM Plex Mono', monospace !important;
+      }
+    `;
+  }
 
   useEffect(() => {
     const host = hostRef.current;
@@ -118,11 +142,23 @@ export default function ReportView() {
       }
     };
 
+    const syncFont = () => {
+      if (fontStyleRef.current) {
+        fontStyleRef.current.textContent = buildFontCSS();
+      }
+    };
+
     syncTheme();
-    const observer = new MutationObserver(syncTheme);
+    syncFont();
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.attributeName === 'data-theme') syncTheme();
+        if (m.attributeName === 'data-font') syncFont();
+      }
+    });
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['data-theme'],
+      attributeFilter: ['data-theme', 'data-font'],
     });
     return () => observer.disconnect();
   }, []);
@@ -178,6 +214,12 @@ export default function ReportView() {
     themeStyle.textContent = buildThemeVarsCSS();
     themeStyleRef.current = themeStyle;
     shadow.appendChild(themeStyle);
+
+    // --- Font override: a dedicated <style> that gets updated on font toggle ---
+    const fontStyle = document.createElement('style');
+    fontStyle.textContent = buildFontCSS();
+    fontStyleRef.current = fontStyle;
+    shadow.appendChild(fontStyle);
 
     // Sync the data-theme attribute on the host element for :host([data-theme="dark"]) selectors
     const host = hostRef.current;

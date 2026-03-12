@@ -30,6 +30,9 @@ function AppLayout() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
   });
+  const [font, setFont] = useState<'mono' | 'serif'>(() => {
+    return (localStorage.getItem('font') as 'mono' | 'serif') || 'mono';
+  });
   const contentAreaRef = useRef<HTMLDivElement>(null);
 
   const { panels, addPanel, getFirstPanelPath } = usePanels();
@@ -50,6 +53,16 @@ function AppLayout() {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  // Apply font to <html>
+  useEffect(() => {
+    if (font === 'serif') {
+      document.documentElement.setAttribute('data-font', 'serif');
+    } else {
+      document.documentElement.removeAttribute('data-font');
+    }
+    localStorage.setItem('font', font);
+  }, [font]);
 
   const toggleTheme = useCallback(() => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
@@ -95,6 +108,8 @@ function AppLayout() {
           onSettingsOpen={() => setSettingsOpen(true)}
           theme={theme}
           onThemeToggle={toggleTheme}
+          font={font}
+          onFontToggle={() => setFont(f => f === 'mono' ? 'serif' : 'mono')}
         />
         <div className="content-area" ref={contentAreaRef}>
           {panels.map(panel => (

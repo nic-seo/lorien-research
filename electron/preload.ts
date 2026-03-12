@@ -29,4 +29,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('updater-event', handler);
     return () => ipcRenderer.off('updater-event', handler);
   },
+
+  // Sessions persistence (file-based, survives port/origin changes)
+  loadSessions: (): Promise<string> => ipcRenderer.invoke('load-sessions'),
+  saveSessions: (json: string): Promise<void> => ipcRenderer.invoke('save-sessions', json),
 });
