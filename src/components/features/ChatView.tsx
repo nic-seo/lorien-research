@@ -7,6 +7,7 @@ import { sendChatMessage, generateChatTitle } from '../../lib/api';
 import type { ChatToolEvent, LinkedNoteInput, NoteEdit } from '../../lib/api';
 import type { Chat, ChatMessage, Project, Report, Note } from '../../db/types';
 import DocHeader from './DocHeader';
+import { printChat } from '../../lib/printDoc';
 
 marked.setOptions({ breaks: true });
 
@@ -28,6 +29,37 @@ export default function ChatView() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Editable title
+  const titleDivRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef('');
+  const titleSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    if (chat && titleDivRef.current) {
+      if (titleDivRef.current.textContent !== chat.title) {
+        titleDivRef.current.textContent = chat.title;
+        titleRef.current = chat.title;
+      }
+    }
+  }, [chat?._rev]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTitleInput = (e: React.FormEvent<HTMLDivElement>) => {
+    titleRef.current = e.currentTarget.textContent || '';
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    titleSaveTimerRef.current = setTimeout(() => {
+      if (chatId) updateDoc<Chat>(chatId, { title: titleRef.current.trim() || 'Untitled' });
+    }, 800);
+  };
+
+  const handleTitleBlur = () => {
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    if (chatId) updateDoc<Chat>(chatId, { title: titleRef.current.trim() || 'Untitled' });
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); textareaRef.current?.focus(); }
+  };
 
   // Show scrollbar only while scrolling
   useEffect(() => {
@@ -218,10 +250,24 @@ export default function ChatView() {
         docId={chatId}
         docType="chat"
         projectId={projectId}
+        onDownload={() => printChat(chat.title, project?.title ?? '', chat.messages ?? [])}
       />
 
-      <div className="chat-title-bar">
-        <span className="chat-title-text">{chat.title}</span>
+      <div className="doc-title-bar chat-title-bar">
+        <div
+          ref={titleDivRef}
+          className="chat-title-text"
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleTitleInput}
+          onBlur={handleTitleBlur}
+          onKeyDown={handleTitleKeyDown}
+          data-placeholder="Untitled"
+          onPaste={(e) => {
+            e.preventDefault();
+            document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+          }}
+        />
       </div>
 
       <div className="chat-messages" ref={messagesRef}>

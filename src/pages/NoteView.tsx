@@ -1,25 +1,29 @@
 import { useParams } from 'react-router-dom';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from 'tiptap-markdown';
+import { marked } from 'marked';
 import { useDoc } from '../db/hooks';
 import { updateDoc } from '../db';
 import type { Note } from '../db/types';
 import DocHeader from '../components/features/DocHeader';
+import { printNote } from '../lib/printDoc';
 
 export default function NoteView() {
   const { projectId, noteId } = useParams<{ projectId: string; noteId: string }>();
   const { doc: note, loading } = useDoc<Note>(noteId || null);
 
-  const [title, setTitle] = useState('');
+  const titleDivRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const titleRef = useRef('');
   const contentRef = useRef('');
+  // Prevents onUpdate → scheduleSave loop when setContent is called programmatically
+  const isSyncingRef = useRef(false);
 
-  // Keep refs in sync with state
-  titleRef.current = title;
+  // Normalize content for comparison — tiptap-markdown may add/remove trailing newlines
+  const normalize = (s: string) => s.trim();
 
   // Save helper
   const save = useCallback(async (newTitle: string, newContent: string) => {
@@ -56,6 +60,9 @@ export default function NoteView() {
       },
     },
     onUpdate: ({ editor }) => {
+      // Skip saves triggered by our own setContent calls — they don't represent
+      // user edits and would cause a save → re-fetch → setContent → cursor-jump loop.
+      if (isSyncingRef.current) return;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       contentRef.current = (editor.storage as any).markdown.getMarkdown();
       scheduleSave();
@@ -65,18 +72,31 @@ export default function NoteView() {
   // Sync local state when note loads or is updated externally (e.g. chat edit)
   useEffect(() => {
     if (note && editor) {
-      // Only update the editor if the content actually changed (avoids
-      // clobbering in-progress typing when _rev changes from our own saves).
-      if (contentRef.current !== note.content) {
+      // Normalize both sides before comparing — getMarkdown() may trim trailing
+      // newlines differently from what was stored, causing false positives that
+      // trigger setContent and jump the cursor.
+      if (normalize(contentRef.current) !== normalize(note.content)) {
+        isSyncingRef.current = true;
         contentRef.current = note.content;
         editor.commands.setContent(note.content);
+        isSyncingRef.current = false;
       }
       if (titleRef.current !== note.title) {
-        setTitle(note.title);
         titleRef.current = note.title;
+        if (titleDivRef.current) {
+          titleDivRef.current.textContent = note.title;
+        }
       }
     }
   }, [note?._rev, editor]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Seed title div on initial load
+  useEffect(() => {
+    if (note && titleDivRef.current && titleDivRef.current.textContent === '') {
+      titleDivRef.current.textContent = note.title;
+      titleRef.current = note.title;
+    }
+  }, [note]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flush pending save on unmount
   useEffect(() => {
@@ -85,9 +105,8 @@ export default function NoteView() {
     };
   }, []);
 
-  const handleTitleChange = (newTitle: string) => {
-    setTitle(newTitle);
-    titleRef.current = newTitle;
+  const handleTitleInput = (e: React.FormEvent<HTMLDivElement>) => {
+    titleRef.current = e.currentTarget.textContent || '';
     scheduleSave();
   };
 
@@ -114,19 +133,31 @@ export default function NoteView() {
         docId={noteId}
         docType="note"
         projectId={projectId}
+        onDownload={() => {
+          const bodyHtml = marked.parse(note.content || '') as string;
+          printNote(note.title, bodyHtml);
+        }}
       />
 
-      <div className="note-scroll">
-        <input
-          type="text"
-          className="note-editor-title"
-          value={title}
-          onChange={e => handleTitleChange(e.target.value)}
+      <div className="doc-title-bar">
+        <div
+          ref={titleDivRef}
+          className="doc-title-input"
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleTitleInput}
           onBlur={handleTitleBlur}
           onKeyDown={handleTitleKeyDown}
-          placeholder="Untitled"
+          data-placeholder="Untitled"
+          onPaste={(e) => {
+            e.preventDefault();
+            const text = e.clipboardData.getData('text/plain');
+            document.execCommand('insertText', false, text);
+          }}
         />
+      </div>
 
+      <div className="note-scroll">
         <EditorContent editor={editor} />
       </div>
     </div>

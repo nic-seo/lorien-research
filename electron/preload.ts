@@ -33,4 +33,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Sessions persistence (file-based, survives port/origin changes)
   loadSessions: (): Promise<string> => ipcRenderer.invoke('load-sessions'),
   saveSessions: (json: string): Promise<void> => ipcRenderer.invoke('save-sessions', json),
+
+  // Silent PDF export to Downloads folder
+  printToPdf: (title: string, html: string): Promise<{ success: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('print-to-pdf', { title, html }),
 });

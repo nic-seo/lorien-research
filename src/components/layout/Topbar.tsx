@@ -1,5 +1,6 @@
 import { Search, Sun, Moon, Settings } from 'lucide-react';
 import SessionsMenu from './SessionsMenu';
+import { useState, useRef, useEffect } from 'react';
 
 interface TopbarProps {
   onSearchOpen: () => void;
@@ -7,11 +8,27 @@ interface TopbarProps {
   theme: 'light' | 'dark';
   onThemeToggle: () => void;
   font: 'mono' | 'serif';
-  onFontToggle: () => void;
+  onFontChange: (f: 'mono' | 'serif') => void;
+  width: 'standard' | 'narrow';
+  onWidthChange: (w: 'standard' | 'narrow') => void;
 }
 
-export default function Topbar({ onSearchOpen, onSettingsOpen, theme, onThemeToggle, font, onFontToggle }: TopbarProps) {
+export default function Topbar({ onSearchOpen, onSettingsOpen, theme, onThemeToggle, font, onFontChange, width, onWidthChange }: TopbarProps) {
   const isElectron = !!window.electronAPI?.isElectron;
+  const [typoOpen, setTypoOpen] = useState(false);
+  const typoRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!typoOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (typoRef.current && !typoRef.current.contains(e.target as Node)) {
+        setTypoOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [typoOpen]);
 
   return (
     <header className={`topbar${isElectron ? ' topbar-electron' : ''}`}>
@@ -28,9 +45,57 @@ export default function Topbar({ onSearchOpen, onSettingsOpen, theme, onThemeTog
         <span className="topbar-search-hint">⌃/</span>
       </button>
 
-      <button className="topbar-action topbar-font-toggle" onClick={onFontToggle} title={`Switch to ${font === 'mono' ? 'serif' : 'mono'}`}>
-        {font === 'mono' ? 'Aa' : 'Ff'}
-      </button>
+      <div className="typo-toggle-wrap" ref={typoRef}>
+        <button
+          className={`topbar-action topbar-font-toggle${typoOpen ? ' is-open' : ''}`}
+          onClick={() => setTypoOpen(o => !o)}
+          title="Typography settings"
+        >
+          Aa
+        </button>
+
+        {typoOpen && (
+          <div className="typo-dropdown">
+            <div className="typo-section">
+              <div className="typo-section-label">Font</div>
+              <div className="typo-btn-group">
+                <button
+                  className={`typo-btn${font === 'mono' ? ' active' : ''}`}
+                  onClick={() => onFontChange('mono')}
+                >
+                  Mono
+                </button>
+                <button
+                  className={`typo-btn typo-btn-serif${font === 'serif' ? ' active' : ''}`}
+                  onClick={() => onFontChange('serif')}
+                >
+                  Serif
+                </button>
+              </div>
+            </div>
+
+            <div className="typo-divider" />
+
+            <div className="typo-section">
+              <div className="typo-section-label">Width</div>
+              <div className="typo-btn-group">
+                <button
+                  className={`typo-btn${width === 'standard' ? ' active' : ''}`}
+                  onClick={() => onWidthChange('standard')}
+                >
+                  Standard
+                </button>
+                <button
+                  className={`typo-btn${width === 'narrow' ? ' active' : ''}`}
+                  onClick={() => onWidthChange('narrow')}
+                >
+                  Narrow
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       <button className="topbar-action" onClick={onThemeToggle} title="Toggle theme">
         {theme === 'light' ? <Sun size={14} /> : <Moon size={14} />}

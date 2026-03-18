@@ -1,7 +1,7 @@
 import { useParams, useSearchParams } from 'react-router-dom';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDoc, useProjectDocs } from '../db/hooks';
-import { createDoc, deleteDoc, deleteReport } from '../db';
+import { createDoc, deleteDoc, deleteReport, updateDoc } from '../db';
 import type { Project, Report, Note, Chat, Reference, Topic } from '../db/types';
 import { generateReport } from '../lib/api';
 import QueueList from '../components/features/QueueList';
@@ -40,6 +40,41 @@ export default function ProjectDetail() {
   const { docs: chats } = useProjectDocs<Chat>('chat', projectId || null);
   const { docs: refs } = useProjectDocs<Reference>('reference', projectId || null);
 
+  // Editable project title
+  const titleDivRef = useRef<HTMLHeadingElement>(null);
+  const titleRef = useRef('');
+  const titleSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const saveTitle = useCallback(async (newTitle: string) => {
+    if (!projectId) return;
+    await updateDoc<Project>(projectId, { title: newTitle.trim() || 'Untitled' });
+  }, [projectId]);
+
+  // Seed / sync title div when project loads or is updated externally
+  useEffect(() => {
+    if (project && titleDivRef.current) {
+      if (titleDivRef.current.textContent !== project.title) {
+        titleDivRef.current.textContent = project.title;
+        titleRef.current = project.title;
+      }
+    }
+  }, [project?._rev]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTitleInput = (e: React.FormEvent<HTMLHeadingElement>) => {
+    titleRef.current = e.currentTarget.textContent || '';
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    titleSaveTimerRef.current = setTimeout(() => saveTitle(titleRef.current), 800);
+  };
+
+  const handleTitleBlur = () => {
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    saveTitle(titleRef.current);
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLHeadingElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLElement).blur(); }
+  };
+
   // Tab key cycles between tabs (only when no input/textarea is focused)
   const cycleTab = useCallback((direction: 1 | -1) => {
     setActiveTab(prev => {
@@ -51,9 +86,9 @@ export default function ProjectDetail() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Don't intercept Tab when user is typing in an input or textarea
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Don't intercept Tab when user is typing in an input, textarea, or contenteditable
+      const el = e.target as HTMLElement;
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable) return;
 
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -84,7 +119,20 @@ export default function ProjectDetail() {
       <div className="project-detail-scroll">
         <div className="page-header">
           <div>
-            <h2 className={`page-title title-${projectColor(projectId || '')}`}>{project.title}</h2>
+            <h2
+              ref={titleDivRef}
+              className={`page-title title-${projectColor(projectId || '')}`}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={handleTitleInput}
+              onBlur={handleTitleBlur}
+              onKeyDown={handleTitleKeyDown}
+              data-placeholder="Untitled"
+              onPaste={(e) => {
+                e.preventDefault();
+                document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+              }}
+            />
             {project.description && <p className="page-description">{project.description}</p>}
           </div>
         </div>

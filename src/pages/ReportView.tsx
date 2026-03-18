@@ -1,8 +1,10 @@
 import { useParams } from 'react-router-dom';
 import { useDoc } from '../db/hooks';
+import { updateDoc } from '../db';
 import type { Report } from '../db/types';
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import DocHeader from '../components/features/DocHeader';
+import { printReport } from '../lib/printDoc';
 
 // ---- Constants ----
 
@@ -99,6 +101,40 @@ export default function ReportView() {
   const [navItems, setNavItems] = useState<NavItem[]>([]);
   const [shadowRoot, setShadowRoot] = useState<ShadowRoot | null>(null);
 
+  // Editable title
+  const titleDivRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef('');
+  const titleSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const saveTitle = useCallback(async (newTitle: string) => {
+    if (!reportId) return;
+    await updateDoc<Report>(reportId, { title: newTitle.trim() || 'Untitled' });
+  }, [reportId]);
+
+  useEffect(() => {
+    if (report && titleDivRef.current) {
+      if (titleDivRef.current.textContent !== report.title) {
+        titleDivRef.current.textContent = report.title;
+        titleRef.current = report.title;
+      }
+    }
+  }, [report?._rev]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTitleInput = (e: React.FormEvent<HTMLDivElement>) => {
+    titleRef.current = e.currentTarget.textContent || '';
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    titleSaveTimerRef.current = setTimeout(() => saveTitle(titleRef.current), 800);
+  };
+
+  const handleTitleBlur = () => {
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    saveTitle(titleRef.current);
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLElement).blur(); }
+  };
+
   // Sync dark-mode from <html data-theme> → shadow host + push CSS variables
   // Also sync font mode from <html data-font> → shadow DOM font override
   const themeStyleRef = useRef<HTMLStyleElement | null>(null);
@@ -110,7 +146,7 @@ export default function ReportView() {
     return `
       :host {
         font-family: 'Crimson Text', Georgia, 'Times New Roman', serif !important;
-        font-size: 16px !important;
+        font-size: 17px !important;
         line-height: 1.7 !important;
       }
       :host h1, :host h2, :host h3, :host h4 {
@@ -118,7 +154,7 @@ export default function ReportView() {
       }
       :host p, :host li, :host blockquote, :host td, :host th {
         font-family: 'Crimson Text', Georgia, 'Times New Roman', serif !important;
-        font-size: 16px !important;
+        font-size: 17px !important;
       }
       :host code, :host pre {
         font-family: 'IBM Plex Mono', monospace !important;
@@ -246,6 +282,7 @@ export default function ReportView() {
       .content       { max-width: 800px; margin: 0 auto; padding: 0 !important; }
       .hero          { margin-top: 0 !important; padding-top: 24px !important; }
       .hero-tag      { display: none !important; }
+      .hero h1       { display: none !important; }
     `;
     shadow.appendChild(override);
 
@@ -279,7 +316,25 @@ export default function ReportView() {
         docId={reportId}
         docType="report"
         projectId={projectId}
+        onDownload={() => report?.htmlContent && printReport(report.htmlContent, report.title)}
       />
+
+      <div className="doc-title-bar">
+        <div
+          ref={titleDivRef}
+          className="doc-title-text doc-title-pink"
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleTitleInput}
+          onBlur={handleTitleBlur}
+          onKeyDown={handleTitleKeyDown}
+          data-placeholder="Untitled"
+          onPaste={(e) => {
+            e.preventDefault();
+            document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+          }}
+        />
+      </div>
 
       <div className="report-content">
         <div className="report-toc-trigger" />

@@ -33,6 +33,9 @@ function AppLayout() {
   const [font, setFont] = useState<'mono' | 'serif'>(() => {
     return (localStorage.getItem('font') as 'mono' | 'serif') || 'mono';
   });
+  const [readingWidth, setReadingWidth] = useState<'standard' | 'narrow'>(() => {
+    return (localStorage.getItem('reading-width') as 'standard' | 'narrow') || 'standard';
+  });
   const contentAreaRef = useRef<HTMLDivElement>(null);
 
   const { panels, addPanel, getFirstPanelPath } = usePanels();
@@ -63,6 +66,16 @@ function AppLayout() {
     }
     localStorage.setItem('font', font);
   }, [font]);
+
+  // Apply reading width to <html>
+  useEffect(() => {
+    if (readingWidth === 'narrow') {
+      document.documentElement.setAttribute('data-width', 'narrow');
+    } else {
+      document.documentElement.removeAttribute('data-width');
+    }
+    localStorage.setItem('reading-width', readingWidth);
+  }, [readingWidth]);
 
   const toggleTheme = useCallback(() => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
@@ -109,7 +122,9 @@ function AppLayout() {
           theme={theme}
           onThemeToggle={toggleTheme}
           font={font}
-          onFontToggle={() => setFont(f => f === 'mono' ? 'serif' : 'mono')}
+          onFontChange={setFont}
+          width={readingWidth}
+          onWidthChange={setReadingWidth}
         />
         <div className="content-area" ref={contentAreaRef}>
           {panels.map(panel => (

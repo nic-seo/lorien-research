@@ -169,6 +169,43 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
+// --- Silent PDF export (no print dialog) ---
+
+ipcMain.handle('print-to-pdf', async (_event, { title, html }: { title: string; html: string }) => {
+  const tmpPath = path.join(app.getPath('temp'), `lorien-print-${Date.now()}.html`);
+  let win: BrowserWindow | null = null;
+  try {
+    fs.writeFileSync(tmpPath, html, 'utf-8');
+
+    win = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    await win.loadFile(tmpPath);
+
+    const pdfBuffer = await win.webContents.printToPDF({
+      printBackground: true,
+      margins: { marginType: 'none' },
+    });
+
+    // Sanitize filename: strip chars illegal on any major OS
+    const safeName = title.replace(/[/\\:*?"<>|]/g, '').trim() || 'document';
+    const outPath = path.join(app.getPath('downloads'), `${safeName}.pdf`);
+    fs.writeFileSync(outPath, pdfBuffer);
+
+    return { success: true, path: outPath };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    try { win?.close(); } catch { /* ignore */ }
+    try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+  }
+});
+
 // --- App lifecycle ---
 
 app.whenReady().then(createWindow);
