@@ -92,7 +92,7 @@
 [data-font="serif"] .list-item-title { font-size: 16px; }
 [data-font="serif"] .queue-item-text { font-size: 15px; }
 
-[data-font="serif"] .note-body { font-size: 17px; line-height: 1.75; }
+[data-font="serif"] .note-body { font-size: 16px; line-height: 1.75; }
 [data-font="serif"] .note-body h1 { font-size: 23px; }
 [data-font="serif"] .note-body h2 { font-size: 20px; }
 [data-font="serif"] .note-body h3 { font-size: 18px; }
@@ -2185,7 +2185,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   box-sizing: border-box;
 }
 .note-body {
-  font-size: 13.5px;
+  font-size: 12.5px;
   line-height: 1.8;
   color: var(--text);
   min-height: 200px;
