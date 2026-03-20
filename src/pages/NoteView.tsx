@@ -3,6 +3,7 @@ import { useEffect, useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import { TableKit } from '@tiptap/extension-table';
 import { Markdown } from 'tiptap-markdown';
 import { marked } from 'marked';
 import { CollapsibleHeadings } from '../lib/collapsibleHeadings';
@@ -26,6 +27,12 @@ export default function NoteView() {
   // Normalize content for comparison — tiptap-markdown may add/remove trailing newlines
   const normalize = (s: string) => s.trim();
 
+  // Collapse double newlines between markdown table rows so markdown-it recognises
+  // them as a table. This repairs content that was saved before table support existed
+  // (each row was a paragraph → serialised with \n\n between rows).
+  const fixTableNewlines = (s: string) =>
+    s.replace(/(\|[^\n]*)\n\n(?=\s*\|)/g, '$1\n');
+
   // Save helper
   const save = useCallback(async (newTitle: string, newContent: string) => {
     if (!noteId) return;
@@ -47,6 +54,7 @@ export default function NoteView() {
     extensions: [
       StarterKit,
       CollapsibleHeadings,
+      TableKit.configure({ table: { resizable: false } }),
       Placeholder.configure({
         placeholder: 'Start writing...',
       }),
@@ -81,7 +89,7 @@ export default function NoteView() {
       if (normalize(contentRef.current) !== normalize(note.content) && !editor.isFocused) {
         isSyncingRef.current = true;
         contentRef.current = note.content;
-        editor.commands.setContent(note.content);
+        editor.commands.setContent(fixTableNewlines(note.content));
         isSyncingRef.current = false;
       }
       if (titleRef.current !== note.title) {
