@@ -1319,33 +1319,22 @@ h3.subsection-title {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sessions-item-meta {
-  font-size: 10px;
-  color: var(--text-secondary);
-  background: var(--bg);
-  border: 1px solid var(--border-light);
-  border-radius: 3px;
-  padding: 1px 5px;
-  flex-shrink: 0;
-}
-.sessions-item.active .sessions-item-meta {
-  border-color: var(--accent);
-  color: var(--accent);
-}
 .sessions-item-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1;
   cursor: pointer;
-  padding: 0 2px;
+  padding: 2px;
+  border-radius: 3px;
   opacity: 0;
-  transition: opacity 0.1s, color 0.1s;
+  transition: opacity 0.1s, color 0.1s, background 0.1s;
   flex-shrink: 0;
 }
 .sessions-item:hover .sessions-item-delete { opacity: 1; }
-.sessions-item-delete:hover { color: #c0392b; }
+.sessions-item-delete:hover { color: #c0392b; background: rgba(192,57,43,0.08); }
 
 .sessions-empty {
   padding: 14px 10px;

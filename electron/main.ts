@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, globalShortcut } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { autoUpdater } from 'electron-updater';
@@ -74,6 +74,20 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  // Register Ctrl+N as a global shortcut while the window is focused.
+  // globalShortcut operates at the OS level and fires even when macOS or
+  // Chromium would otherwise swallow the key before it reaches the renderer.
+  mainWindow.on('focus', () => {
+    if (!globalShortcut.isRegistered('Ctrl+N')) {
+      globalShortcut.register('Ctrl+N', () => {
+        mainWindow?.webContents.send('app-shortcut', 'new-session');
+      });
+    }
+  });
+  mainWindow.on('blur', () => {
+    globalShortcut.unregister('Ctrl+N');
   });
 
   // In dev, load Vite dev server; in prod, load from embedded Express
@@ -211,6 +225,7 @@ ipcMain.handle('print-to-pdf', async (_event, { title, html }: { title: string; 
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
+  globalShortcut.unregisterAll();
   stopServer();
   app.quit();
 });

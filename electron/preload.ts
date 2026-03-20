@@ -34,6 +34,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadSessions: (): Promise<string> => ipcRenderer.invoke('load-sessions'),
   saveSessions: (json: string): Promise<void> => ipcRenderer.invoke('save-sessions', json),
 
+  // App-level keyboard shortcuts (fired from main process before-input-event)
+  onAppShortcut: (callback: (shortcut: string) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, shortcut: string) => callback(shortcut);
+    ipcRenderer.on('app-shortcut', handler);
+    return () => ipcRenderer.off('app-shortcut', handler);
+  },
+
   // Silent PDF export to Downloads folder
   printToPdf: (title: string, html: string): Promise<{ success: boolean; path?: string; error?: string }> =>
     ipcRenderer.invoke('print-to-pdf', { title, html }),

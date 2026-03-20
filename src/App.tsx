@@ -38,7 +38,7 @@ function AppLayout() {
   });
   const contentAreaRef = useRef<HTMLDivElement>(null);
 
-  const { panels, addPanel, getFirstPanelPath } = usePanels();
+  const { panels, addPanel, getFirstPanelPath, loadSession } = usePanels();
 
   useExternalLinkInterceptor(contentAreaRef);
 
@@ -81,9 +81,16 @@ function AppLayout() {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   }, []);
 
-  // Keyboard shortcuts: Ctrl+/ search, Ctrl+. lookup, Ctrl+P new panel
+  // Keyboard shortcuts — use capture phase so this fires before any focused
+  // element (e.g. TipTap editor) can call stopPropagation.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.code === 'KeyN') {
+        e.preventDefault();
+        e.stopPropagation();
+        loadSession(['/']);
+        window.dispatchEvent(new CustomEvent('lorien-new-session'));
+      }
       if (e.ctrlKey && e.code === 'Slash') {
         e.preventDefault();
         setSearchOpen(prev => !prev);
@@ -109,9 +116,9 @@ function AppLayout() {
         setLookupOpen(false);
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [addPanel, getFirstPanelPath]);
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, [addPanel, getFirstPanelPath, loadSession]);
 
   return (
     <div className="app-layout">

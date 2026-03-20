@@ -69,13 +69,14 @@ export default function NoteView() {
     },
   });
 
-  // Sync local state when note loads or is updated externally (e.g. chat edit)
+  // Sync local state when note loads or is updated externally (e.g. chat edit).
+  // IMPORTANT: skip content sync while the editor is focused — the user is
+  // actively typing, so their in-progress text is always more current than
+  // whatever the DB just returned from the last debounced save.  Overwriting
+  // here is exactly what causes the cursor-jump bug.
   useEffect(() => {
     if (note && editor) {
-      // Normalize both sides before comparing — getMarkdown() may trim trailing
-      // newlines differently from what was stored, causing false positives that
-      // trigger setContent and jump the cursor.
-      if (normalize(contentRef.current) !== normalize(note.content)) {
+      if (normalize(contentRef.current) !== normalize(note.content) && !editor.isFocused) {
         isSyncingRef.current = true;
         contentRef.current = note.content;
         editor.commands.setContent(note.content);

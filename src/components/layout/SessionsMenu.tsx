@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type React from 'react';
-import { Layers } from 'lucide-react';
+import { Layers, X } from 'lucide-react';
 import { usePanels } from '../../panels/PanelContext';
 
 interface SavedSession {
@@ -58,6 +58,17 @@ export default function SessionsMenu() {
     });
   }, []);
   const [nameInput, setNameInput] = useState('');
+
+  // Clear active session when Ctrl+N starts a fresh session
+  useEffect(() => {
+    const handler = () => {
+      setActiveId(null);
+      storeActiveId(null);
+      setOpen(false);
+    };
+    window.addEventListener('lorien-new-session', handler);
+    return () => window.removeEventListener('lorien-new-session', handler);
+  }, []);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -180,13 +191,12 @@ export default function SessionsMenu() {
                     onKeyDown={e => e.key === 'Enter' && loadSavedSession(session)}
                   >
                     <span className="sessions-item-name">{session.name}</span>
-                    <span className="sessions-item-meta">{session.paths.length}</span>
                     <button
                       className="sessions-item-delete"
                       onClick={e => deleteSession(session.id, e)}
                       title="Delete session"
                     >
-                      ×
+                      <X size={11} />
                     </button>
                   </div>
                 ))}

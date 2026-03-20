@@ -12,6 +12,8 @@ interface ElectronAPI {
   ) => () => void;
   loadSessions: () => Promise<string>;
   saveSessions: (json: string) => Promise<void>;
+  printToPdf: (title: string, html: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  onAppShortcut: (callback: (shortcut: string) => void) => () => void;
 }
 
 interface Window {
