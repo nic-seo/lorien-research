@@ -2187,9 +2187,13 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .note-body > *:first-child { margin-top: 0; }
 .note-body h1,
 .note-body h2,
-.note-body h3 {
+.note-body h3,
+.note-body h4,
+.note-body h5,
+.note-body h6 {
   margin-top: 1.5em;
   margin-bottom: 0.5em;
+  position: relative;
 }
 .note-body h1 {
   font-size: 18px;
@@ -2200,11 +2204,16 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   text-underline-offset: -0.1em;
   text-decoration-skip-ink: none;
 }
-.note-body h2 { font-size: 16px; font-weight: 700; }
+.note-body h2 {
+  font-size: 16px;
+  font-weight: 700;
+  border-left: 3px solid var(--blue);
+  padding-left: 10px;
+}
 .note-body h3 {
   font-size: 14px;
   font-weight: 600;
-  border-left: 3px solid var(--green);
+  border-left: 3px solid var(--yellow);
   padding-left: 10px;
 }
 .note-body p { margin-bottom: 0.75em; }
@@ -2259,6 +2268,42 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   max-width: 100%;
   border-radius: 4px;
 }
+
+/* ===== Collapsible heading fold button ===== */
+.note-fold-btn {
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  opacity: 0;
+  color: var(--text-muted);
+  user-select: none;
+  font-size: 13px;
+  line-height: 1;
+  transition: opacity 0.12s, color 0.12s;
+}
+.note-fold-btn::before {
+  content: '▾';
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.note-fold-btn.is-collapsed {
+  opacity: 0.65;
+  color: var(--text-secondary);
+}
+.note-fold-btn.is-collapsed::before {
+  transform: rotate(-90deg);
+}
+.note-body h1:hover .note-fold-btn,
+.note-body h2:hover .note-fold-btn,
+.note-body h3:hover .note-fold-btn,
+.note-body h4:hover .note-fold-btn,
+.note-body h5:hover .note-fold-btn,
+.note-body h6:hover .note-fold-btn {
+  opacity: 0.4;
+}
+
 .note-body table {
   width: 100%;
   border-collapse: collapse;

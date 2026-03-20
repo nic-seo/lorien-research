@@ -5,6 +5,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from 'tiptap-markdown';
 import { marked } from 'marked';
+import { CollapsibleHeadings } from '../lib/collapsibleHeadings';
 import { useDoc } from '../db/hooks';
 import { updateDoc } from '../db';
 import type { Note } from '../db/types';
@@ -45,6 +46,7 @@ export default function NoteView() {
   const editor = useEditor({
     extensions: [
       StarterKit,
+      CollapsibleHeadings,
       Placeholder.configure({
         placeholder: 'Start writing...',
       }),
