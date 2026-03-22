@@ -382,7 +382,7 @@ export function createServer(port: number, options?: {
     if (!requireApiKey(res)) return;
 
     const { messages, projectContext, summary: existingSummary, linkedNotes } = req.body as {
-      messages?: { role: string; content: string }[];
+      messages?: { role: string; content: string; attachments?: { name: string; mimeType: string; data: string }[] }[];
       projectContext?: { title: string; description: string; reportTitles: string[] };
       summary?: string;
       linkedNotes?: { id: string; title: string; content: string }[];
@@ -509,6 +509,33 @@ export function createServer(port: number, options?: {
       const CHAR_BUDGET = 400_000;
       const RECENT_KEEP = 20;
 
+      // Build a multi-modal content array when a message has file attachments
+      const buildContentBlocks = (
+        text: string,
+        attachments: { name: string; mimeType: string; data: string }[],
+      ): Anthropic.Messages.ContentBlockParam[] => {
+        const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+        if (text.trim()) blocks.push({ type: 'text', text });
+        for (const a of attachments) {
+          if (a.mimeType === 'application/pdf') {
+            blocks.push({
+              type: 'document',
+              source: { type: 'base64', media_type: 'application/pdf', data: a.data },
+            } as Anthropic.Messages.ContentBlockParam);
+          } else {
+            blocks.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: a.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                data: a.data,
+              },
+            });
+          }
+        }
+        return blocks;
+      };
+
       let verbatimMessages = messages;
       let newSummary: string | null = null;
       let summarizedCount: number | null = null;
@@ -563,7 +590,9 @@ export function createServer(port: number, options?: {
         ...chatMessages,
         ...verbatimMessages.map((m) => ({
           role: m.role as 'user' | 'assistant',
-          content: m.content,
+          content: m.attachments?.length
+            ? buildContentBlocks(m.content, m.attachments)
+            : m.content,
         })),
       ];
 

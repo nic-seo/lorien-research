@@ -3,33 +3,142 @@
  * content under any heading by clicking the small toggle arrow that
  * appears on heading hover (or stays visible when collapsed).
  *
- * Collapsed state lives entirely in ProseMirror plugin state (in-memory).
- * Positions are remapped whenever the document changes so folds stay on
- * the right headings as the user edits.
+ * Collapsed state is persisted to localStorage keyed by noteId so folds
+ * survive page reloads. Headings are identified by slug (derived from
+ * text content) rather than raw position, so persistence is stable even
+ * if content is edited between sessions.
+ *
+ * Restoration happens after content is loaded (not on init) because the
+ * editor starts with an empty doc — call restoreCollapsed(editor, noteId)
+ * once after the first setContent call.
  */
 
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import type { Node } from '@tiptap/pm/model';
+import type { Editor } from '@tiptap/react';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
-const KEY = new PluginKey<Set<number>>('collapsibleHeadings');
+export const KEY = new PluginKey<Set<number>>('collapsibleHeadings');
 
-export const CollapsibleHeadings = Extension.create({
+// Meta sent as a Set<number> replaces the entire state (used for restoration).
+// Meta sent as a number toggles a single heading (normal user interaction).
+type CollapseMeta = number | Set<number>;
+
+// ---- Slug helpers (mirrors NoteView.tsx slugify) ----
+
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'heading';
+}
+
+/**
+ * Build a map of slug → document position for every heading in the doc.
+ * Duplicate headings get a -2, -3, … suffix, matching the TOC convention.
+ */
+function buildSlugMap(doc: Node): Map<string, number> {
+  const map = new Map<string, number>();
+  const seen: Record<string, number> = {};
+  let offset = 0;
+  for (let i = 0; i < doc.childCount; i++) {
+    const node = doc.child(i);
+    if (node.type.name === 'heading') {
+      const text = node.textContent.trim();
+      const base = slugify(text);
+      const count = (seen[base] = (seen[base] || 0) + 1);
+      const slug = count > 1 ? `${base}-${count}` : base;
+      map.set(slug, offset);
+    }
+    offset += node.nodeSize;
+  }
+  return map;
+}
+
+/**
+ * Return the ordered list of slugs for whichever positions in `positions`
+ * correspond to headings in `doc`.
+ */
+function positionsToSlugs(doc: Node, positions: Set<number>): string[] {
+  const slugs: string[] = [];
+  const seen: Record<string, number> = {};
+  let offset = 0;
+  for (let i = 0; i < doc.childCount; i++) {
+    const node = doc.child(i);
+    if (node.type.name === 'heading') {
+      const text = node.textContent.trim();
+      const base = slugify(text);
+      const count = (seen[base] = (seen[base] || 0) + 1);
+      const slug = count > 1 ? `${base}-${count}` : base;
+      if (positions.has(offset)) slugs.push(slug);
+    }
+    offset += node.nodeSize;
+  }
+  return slugs;
+}
+
+// ---- localStorage helpers ----
+
+function storageKey(noteId: string) {
+  return `collapsed:${noteId}`;
+}
+
+function loadSlugs(noteId: string): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(storageKey(noteId)) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveSlugs(noteId: string, slugs: string[]) {
+  try {
+    localStorage.setItem(storageKey(noteId), JSON.stringify(slugs));
+  } catch {
+    // Ignore storage errors (private browsing, quota, etc.)
+  }
+}
+
+// ---- Public restore helper ----
+// Call this once after the note content has been loaded into the editor.
+
+export function restoreCollapsed(editor: Editor, noteId: string) {
+  const slugs = loadSlugs(noteId);
+  if (slugs.length === 0) return;
+  const slugMap = buildSlugMap(editor.state.doc);
+  const positions = new Set<number>();
+  for (const slug of slugs) {
+    const pos = slugMap.get(slug);
+    if (pos != null) positions.add(pos);
+  }
+  if (positions.size > 0) {
+    editor.view.dispatch(editor.state.tr.setMeta(KEY, positions));
+  }
+}
+
+// ---- Extension ----
+
+export const CollapsibleHeadings = Extension.create<{ noteId?: string }>({
   name: 'collapsibleHeadings',
 
+  addOptions() {
+    return { noteId: undefined };
+  },
+
   addProseMirrorPlugins() {
+    const { noteId } = this.options;
+
     return [
       new Plugin<Set<number>>({
         key: KEY,
 
-        // --- Plugin state: a Set of heading document-positions that are collapsed ---
         state: {
           init: () => new Set<number>(),
 
           apply(tr, prev) {
-            // A meta value = the heading position to toggle
-            const meta = tr.getMeta(KEY) as number | undefined;
+            const meta = tr.getMeta(KEY) as CollapseMeta | undefined;
             if (meta != null) {
+              // Set<number> = restore entire state at once (after setContent)
+              if (meta instanceof Set) return meta;
+              // number = toggle a single heading
               const next = new Set(prev);
               next.has(meta) ? next.delete(meta) : next.add(meta);
               return next;
@@ -49,26 +158,36 @@ export const CollapsibleHeadings = Extension.create({
           },
         },
 
+        // Persist to localStorage whenever the collapsed set changes
+        view() {
+          return {
+            update(view, prevState) {
+              if (!noteId) return;
+              const prev = KEY.getState(prevState)!;
+              const curr = KEY.getState(view.state)!;
+              if (curr !== prev) {
+                saveSlugs(noteId, positionsToSlugs(view.state.doc, curr));
+              }
+            },
+          };
+        },
+
         props: {
-          // Click the fold button → toggle that heading's fold
           handleClick(view, _pos, event) {
             const target = event.target as HTMLElement;
             if (!target.classList.contains('note-fold-btn')) return false;
 
-            // Walk up to the heading DOM element
             let el: HTMLElement | null = target.parentElement;
             while (el && !/^H[1-6]$/.test(el.tagName)) {
               el = el.parentElement;
             }
             if (!el) return false;
 
-            // posAtDOM returns position at the start of the heading's content;
-            // subtract 1 to get the heading node's own position.
             const headingPos = view.posAtDOM(el, 0) - 1;
             if (view.state.doc.nodeAt(headingPos)?.type.name !== 'heading') return false;
 
             view.dispatch(view.state.tr.setMeta(KEY, headingPos));
-            return true; // Prevent cursor placement on the button click
+            return true;
           },
 
           decorations(state) {
@@ -76,7 +195,6 @@ export const CollapsibleHeadings = Extension.create({
             const doc = state.doc;
             const decos: Decoration[] = [];
 
-            // Build a flat list of top-level nodes with their document positions
             const topLevel: Array<{ pos: number; nodeSize: number; name: string; level: number }> = [];
             let offset = 0;
             for (let i = 0; i < doc.childCount; i++) {
@@ -96,7 +214,6 @@ export const CollapsibleHeadings = Extension.create({
 
               const isCollapsed = collapsed.has(pos);
 
-              // Fold toggle button inserted at the very start of the heading's content
               decos.push(
                 Decoration.widget(
                   pos + 1,
@@ -113,7 +230,6 @@ export const CollapsibleHeadings = Extension.create({
 
               if (!isCollapsed) continue;
 
-              // Find where this fold ends: next heading at same or higher level
               let foldEnd = doc.content.size;
               for (let j = i + 1; j < topLevel.length; j++) {
                 const sib = topLevel[j];
@@ -123,7 +239,6 @@ export const CollapsibleHeadings = Extension.create({
                 }
               }
 
-              // Apply display:none to every top-level node inside the fold range
               const headingEnd = pos + nodeSize;
               for (let j = i + 1; j < topLevel.length; j++) {
                 const sib = topLevel[j];

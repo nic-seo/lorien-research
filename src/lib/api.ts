@@ -25,9 +25,16 @@ export async function generateReport(query: string): Promise<GenerateReportResul
 
 // --- Chat ---
 
+export interface MessageAttachment {
+  name: string;
+  mimeType: string;
+  data: string; // base64, no data-URI prefix
+}
+
 export interface ChatMessageInput {
   role: 'user' | 'assistant';
   content: string;
+  attachments?: MessageAttachment[];
 }
 
 export interface ProjectContext {

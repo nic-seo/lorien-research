@@ -3119,6 +3119,119 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   cursor: not-allowed;
 }
 
+/* ---- Chat attachments ---- */
+
+.chat-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.chat-attach-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.chat-attach-btn:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+.chat-attach-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chat-pending-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+.chat-attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-width: 200px;
+}
+.chat-attachment-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.chat-attachment-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.chat-attachment-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.chat-attachment-remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.6;
+}
+.chat-attachment-remove:hover {
+  opacity: 1;
+  color: var(--text);
+}
+.chat-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.chat-message-attachment-img {
+  max-width: 280px;
+  max-height: 200px;
+  border-radius: 6px;
+  object-fit: contain;
+  display: block;
+}
+.chat-message-attachment-pdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.chat-message-attachment-pdf:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Chat list delete button visibility */
 .list-item .btn-delete { opacity: 0; }
 .list-item:hover .btn-delete { opacity: 1; }

@@ -7,7 +7,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { TableKit } from '@tiptap/extension-table';
 import { Markdown } from 'tiptap-markdown';
 import { marked } from 'marked';
-import { CollapsibleHeadings } from '../lib/collapsibleHeadings';
+import { CollapsibleHeadings, restoreCollapsed } from '../lib/collapsibleHeadings';
 import { useDoc } from '../db/hooks';
 import { updateDoc } from '../db';
 import type { Note } from '../db/types';
@@ -131,6 +131,7 @@ export default function NoteView() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const titleRef = useRef('');
   const contentRef = useRef('');
+  const hasRestoredCollapsedRef = useRef(false);
   // Prevents onUpdate → scheduleSave loop when setContent is called programmatically
   const isSyncingRef = useRef(false);
 
@@ -163,7 +164,7 @@ export default function NoteView() {
   const editor = useEditor({
     extensions: [
       StarterKit,
-      CollapsibleHeadings,
+      CollapsibleHeadings.configure({ noteId: noteId || undefined }),
       TableKit.configure({ table: { resizable: false } }),
       Placeholder.configure({
         placeholder: 'Start writing...',
@@ -201,6 +202,12 @@ export default function NoteView() {
         contentRef.current = note.content;
         editor.commands.setContent(fixTableNewlines(note.content));
         isSyncingRef.current = false;
+        // Restore persisted collapsed headings on the first content load.
+        // Must happen after setContent so the doc is populated.
+        if (!hasRestoredCollapsedRef.current && noteId) {
+          hasRestoredCollapsedRef.current = true;
+          restoreCollapsed(editor, noteId);
+        }
       }
       if (titleRef.current !== note.title) {
         titleRef.current = note.title;

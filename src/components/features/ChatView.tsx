@@ -2,12 +2,25 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { useDoc, useProjectDocs, useLinks } from '../../db/hooks';
-import { updateDoc, getDoc } from '../../db';
+import { updateDoc, getDoc, createAttachment, getAttachmentBlob } from '../../db';
 import { sendChatMessage, generateChatTitle } from '../../lib/api';
 import type { ChatToolEvent, LinkedNoteInput, NoteEdit } from '../../lib/api';
 import type { Chat, ChatMessage, Project, Report, Note } from '../../db/types';
 import DocHeader from './DocHeader';
 import { printChat } from '../../lib/printDoc';
+
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;  // 5 MB
+const MAX_PDF_BYTES   = 32 * 1024 * 1024; // 32 MB
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 marked.setOptions({ breaks: true });
 
@@ -25,6 +38,13 @@ export default function ChatView() {
   const [toolTrace, setToolTrace] = useState<ChatToolEvent[]>([]);
   const [pendingEdits, setPendingEdits] = useState<(NoteEdit & { _messageIndex: number; _accepted?: boolean; _rejected?: boolean })[]>([]);
   const [savedTraces, setSavedTraces] = useState<Record<number, ChatToolEvent[]>>({});
+
+  // File attachments
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [pendingFileUrls, setPendingFileUrls] = useState<string[]>([]);
+  const [attachmentUrls, setAttachmentUrls] = useState<Map<string, { url: string; mimeType: string }>>(new Map());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const blobUrlsRef = useRef<Map<string, { url: string; mimeType: string }>>(new Map());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -80,6 +100,38 @@ export default function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chat?.messages.length, sending, toolTrace.length]);
 
+  // Create object URLs for pending files (preview before send)
+  useEffect(() => {
+    const urls = pendingFiles.map((f) => URL.createObjectURL(f));
+    setPendingFileUrls(urls);
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, [pendingFiles]);
+
+  // Load blob URLs for attachment IDs that appear in chat history
+  useEffect(() => {
+    if (!chat?.messages) return;
+    const allIds = chat.messages.flatMap((m) => m.attachmentIds ?? []);
+    const newIds = allIds.filter((id) => !blobUrlsRef.current.has(id));
+    if (newIds.length === 0) return;
+    Promise.all(
+      newIds.map(async (id) => {
+        try {
+          const blob = await getAttachmentBlob(id);
+          const url = URL.createObjectURL(blob);
+          blobUrlsRef.current.set(id, { url, mimeType: blob.type });
+        } catch {
+          // silently skip missing attachments
+        }
+      }),
+    ).then(() => setAttachmentUrls(new Map(blobUrlsRef.current)));
+  }, [chat?.messages]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Revoke blob URLs on unmount
+  useEffect(() => {
+    const urlMap = blobUrlsRef.current;
+    return () => urlMap.forEach((u) => URL.revokeObjectURL(u));
+  }, []);
+
   // Auto-resize textarea
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
@@ -92,19 +144,65 @@ export default function ChatView() {
     resizeTextarea();
   }, [input, resizeTextarea]);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    const valid: File[] = [];
+    for (const f of files) {
+      if (f.type === 'application/pdf') {
+        if (f.size > MAX_PDF_BYTES) { setError(`"${f.name}" exceeds 32 MB limit.`); continue; }
+        valid.push(f);
+      } else if (ALLOWED_IMAGE_TYPES.has(f.type)) {
+        if (f.size > MAX_IMAGE_BYTES) { setError(`"${f.name}" exceeds 5 MB limit.`); continue; }
+        valid.push(f);
+      } else {
+        setError(`"${f.name}" is not a supported type (images or PDF only).`);
+      }
+    }
+    setPendingFiles((prev) => [...prev, ...valid]);
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || sending || !chat || !project || !chatId) return;
+    const hasText = input.trim().length > 0;
+    const hasFiles = pendingFiles.length > 0;
+    if ((!hasText && !hasFiles) || sending || !chat || !project || !chatId) return;
+
+    // Read and store attachments before building the message
+    let attachmentIds: string[] = [];
+    let fileData: { name: string; mimeType: string; data: string }[] = [];
+
+    if (hasFiles) {
+      try {
+        fileData = await Promise.all(
+          pendingFiles.map(async (f) => ({
+            name: f.name,
+            mimeType: f.type,
+            data: await readFileAsBase64(f),
+          })),
+        );
+        attachmentIds = await Promise.all(
+          fileData.map((fd) =>
+            createAttachment(chatId, fd.name, fd.mimeType, pendingFiles.find((f) => f.name === fd.name)!.size, fd.data),
+          ),
+        );
+      } catch {
+        setError('Failed to process attachments.');
+        return;
+      }
+    }
 
     const userMessage: ChatMessage = {
       role: 'user',
       content: input.trim(),
       timestamp: new Date().toISOString(),
+      ...(attachmentIds.length > 0 && { attachmentIds }),
     };
 
     const updatedMessages = [...chat.messages, userMessage];
 
-    // Clear input immediately
+    // Clear input and pending files immediately
     setInput('');
+    setPendingFiles([]);
     setError(null);
     setSending(true);
     setToolTrace([]);
@@ -133,9 +231,12 @@ export default function ChatView() {
       // Only send messages that aren't already covered by the stored summary.
       // The server will summarize further if this slice is still too large.
       const summaryUpToIndex = chat.summaryUpToIndex ?? 0;
-      const apiMessages = updatedMessages.slice(summaryUpToIndex).map((m) => ({
+      const sliced = updatedMessages.slice(summaryUpToIndex);
+      const apiMessages = sliced.map((m, i) => ({
         role: m.role,
         content: m.content,
+        // Attach file data only on the last (just-sent) user message
+        ...(i === sliced.length - 1 && fileData.length > 0 && { attachments: fileData }),
       }));
 
       const projectContext = {
@@ -311,13 +412,30 @@ export default function ChatView() {
                 <div
                   className={`chat-message ${msg.role === 'user' ? 'chat-message-user' : 'chat-message-assistant'}`}
                 >
+                  {msg.attachmentIds && msg.attachmentIds.length > 0 && (
+                    <div className="chat-message-attachments">
+                      {msg.attachmentIds.map((id) => {
+                        const entry = attachmentUrls.get(id);
+                        if (!entry) return <span key={id} className="chat-message-attachment-pdf">Loading…</span>;
+                        return entry.mimeType.startsWith('image/') ? (
+                          <a key={id} href={entry.url} target="_blank" rel="noreferrer">
+                            <img className="chat-message-attachment-img" src={entry.url} alt="attachment" />
+                          </a>
+                        ) : (
+                          <a key={id} className="chat-message-attachment-pdf" href={entry.url} target="_blank" rel="noreferrer">
+                            📄 PDF attachment
+                          </a>
+                        );
+                      })}
+                    </div>
+                  )}
                   {msg.role === 'assistant' ? (
                     <div
                       className="chat-message-content chat-message-md"
                       dangerouslySetInnerHTML={{ __html: marked(msg.content) as string }}
                     />
                   ) : (
-                    <div className="chat-message-content">{msg.content}</div>
+                    msg.content && <div className="chat-message-content">{msg.content}</div>
                   )}
                 </div>
 
@@ -397,16 +515,55 @@ export default function ChatView() {
       </div>
 
       <div className="chat-input-area">
-        <textarea
-          ref={textareaRef}
-          className="chat-input"
-          placeholder="Message…"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={sending}
-          rows={1}
-        />
+        {pendingFiles.length > 0 && (
+          <div className="chat-pending-attachments">
+            {pendingFiles.map((file, i) => (
+              <div key={i} className="chat-attachment-chip">
+                {file.type.startsWith('image/') ? (
+                  <img className="chat-attachment-thumb" src={pendingFileUrls[i]} alt={file.name} />
+                ) : (
+                  <span className="chat-attachment-icon">📄</span>
+                )}
+                <span className="chat-attachment-name">{file.name}</span>
+                <button
+                  className="chat-attachment-remove"
+                  onClick={() => setPendingFiles((prev) => prev.filter((_, j) => j !== i))}
+                  title="Remove"
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="chat-input-row">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+            multiple
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
+          <textarea
+            ref={textareaRef}
+            className="chat-input"
+            placeholder="Message…"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={sending}
+            rows={1}
+          />
+          <button
+            className="chat-attach-btn"
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach image or PDF"
+            disabled={sending}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   );

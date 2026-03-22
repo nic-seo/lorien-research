@@ -1,6 +1,6 @@
 // Document types for PouchDB
 
-export type DocType = 'project' | 'report' | 'note' | 'chat' | 'reference' | 'queue-item' | 'link' | 'topic';
+export type DocType = 'project' | 'report' | 'note' | 'chat' | 'reference' | 'queue-item' | 'link' | 'topic' | 'attachment';
 
 export interface BaseDoc {
   _id: string;
@@ -45,6 +45,15 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  attachmentIds?: string[];
+}
+
+export interface ChatAttachment extends BaseDoc {
+  type: 'attachment';
+  chatId: string;
+  name: string;
+  mimeType: string;
+  size: number;
 }
 
 export interface Chat extends BaseDoc {
@@ -93,7 +102,7 @@ export interface Link extends BaseDoc {
   targetType: DocType;
 }
 
-export type AnyDoc = Project | Report | Note | Chat | Reference | QueueItem | Link | Topic;
+export type AnyDoc = Project | Report | Note | Chat | Reference | QueueItem | Link | Topic | ChatAttachment;
 
 // Helper type for docs that belong to a project
 export type ProjectContent = Report | Note | Chat | Reference;

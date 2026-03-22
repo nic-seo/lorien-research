@@ -214,6 +214,39 @@ export async function getLinksFor(docId: string): Promise<Link[]> {
   });
 }
 
+// --- Attachment helpers ---
+
+export async function createAttachment(
+  chatId: string,
+  name: string,
+  mimeType: string,
+  size: number,
+  base64Data: string,
+): Promise<string> {
+  const id = makeId('attachment');
+  const now = new Date().toISOString();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (db as any).put({
+    _id: id,
+    type: 'attachment',
+    chatId,
+    name,
+    mimeType,
+    size,
+    createdAt: now,
+    updatedAt: now,
+    _attachments: {
+      file: { content_type: mimeType, data: base64Data },
+    },
+  });
+  return id;
+}
+
+export async function getAttachmentBlob(docId: string): Promise<Blob> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (db as any).getAttachment(docId, 'file') as Promise<Blob>;
+}
+
 // --- Change feed ---
 
 export function onChange(callback: () => void) {
