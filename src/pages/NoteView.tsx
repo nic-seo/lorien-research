@@ -131,7 +131,6 @@ export default function NoteView() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const titleRef = useRef('');
   const contentRef = useRef('');
-  const hasRestoredCollapsedRef = useRef(false);
   // Prevents onUpdate → scheduleSave loop when setContent is called programmatically
   const isSyncingRef = useRef(false);
 
@@ -202,12 +201,10 @@ export default function NoteView() {
         contentRef.current = note.content;
         editor.commands.setContent(fixTableNewlines(note.content));
         isSyncingRef.current = false;
-        // Restore persisted collapsed headings on the first content load.
-        // Must happen after setContent so the doc is populated.
-        if (!hasRestoredCollapsedRef.current && noteId) {
-          hasRestoredCollapsedRef.current = true;
-          restoreCollapsed(editor, noteId);
-        }
+        // Restore persisted collapsed headings after setContent populates the doc.
+        // Called every time setContent runs (safe — in practice only fires on
+        // initial load since content equality guards skip subsequent calls).
+        if (noteId) restoreCollapsed(editor, noteId);
       }
       if (titleRef.current !== note.title) {
         titleRef.current = note.title;

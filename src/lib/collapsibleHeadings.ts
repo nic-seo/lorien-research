@@ -158,14 +158,18 @@ export const CollapsibleHeadings = Extension.create<{ noteId?: string }>({
           },
         },
 
-        // Persist to localStorage whenever the collapsed set changes
+        // Persist to localStorage only on explicit toggles (not doc-change remaps).
+        // When setContent fires, ProseMirror remaps the empty Set to a new empty Set
+        // instance, making curr !== prev even though nothing meaningful changed.
+        // Guarding on doc identity ensures we only save when the user actually
+        // toggled a heading; restoration after setContent is handled separately.
         view() {
           return {
             update(view, prevState) {
               if (!noteId) return;
               const prev = KEY.getState(prevState)!;
               const curr = KEY.getState(view.state)!;
-              if (curr !== prev) {
+              if (curr !== prev && view.state.doc === prevState.doc) {
                 saveSlugs(noteId, positionsToSlugs(view.state.doc, curr));
               }
             },

@@ -2336,8 +2336,11 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .note-body h3 {
   font-size: 14px;
   font-weight: 600;
-  border-left: 3px solid var(--yellow);
-  padding-left: 10px;
+  text-decoration: underline;
+  text-decoration-color: var(--yellow);
+  text-decoration-thickness: 0.35em;
+  text-underline-offset: -0.1em;
+  text-decoration-skip-ink: none;
 }
 .note-body p { margin-bottom: 0.75em; }
 .note-body p.is-editor-empty:first-child::before {
