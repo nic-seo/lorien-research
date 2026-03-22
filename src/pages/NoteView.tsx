@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom';
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import type { Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { TableKit } from '@tiptap/extension-table';
@@ -12,6 +13,115 @@ import { updateDoc } from '../db';
 import type { Note } from '../db/types';
 import DocHeader from '../components/features/DocHeader';
 import { printNote } from '../lib/printDoc';
+
+// ---- Note TOC ----
+
+interface HeadingItem {
+  id: string;
+  text: string;
+  level: number;
+  pos: number; // ProseMirror doc position (inside the heading node)
+}
+
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'heading';
+}
+
+function extractHeadings(editor: Editor): HeadingItem[] {
+  const headings: HeadingItem[] = [];
+  const seen: Record<string, number> = {};
+  editor.state.doc.forEach((node, offset) => {
+    if (node.type.name === 'heading') {
+      const text = node.textContent.trim();
+      if (!text) return;
+      const slug = slugify(text);
+      const count = (seen[slug] = (seen[slug] || 0) + 1);
+      headings.push({
+        id: count > 1 ? `${slug}-${count}` : slug,
+        text,
+        level: node.attrs.level as number,
+        pos: offset + 1, // +1 = first position inside the node
+      });
+    }
+  });
+  return headings;
+}
+
+// Resolve the live heading DOM element for a ProseMirror position.
+// TipTap may replace DOM nodes at any time, so we always look up fresh.
+function getHeadingEl(editor: Editor, pos: number): Element | null {
+  try {
+    const { node } = editor.view.domAtPos(pos);
+    let el: Element | null = node.nodeType === 1 ? (node as Element) : (node as Text).parentElement;
+    while (el && !['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(el.tagName)) {
+      el = el.parentElement;
+    }
+    return el;
+  } catch {
+    return null;
+  }
+}
+
+function NoteTOC({ editor }: { editor: Editor }) {
+  const [headings, setHeadings] = useState<HeadingItem[]>([]);
+  const [activeId, setActiveId] = useState('');
+
+  // Re-extract headings whenever editor content changes
+  useEffect(() => {
+    const update = () => setHeadings(extractHeadings(editor));
+    update();
+    editor.on('update', update);
+    return () => { editor.off('update', update); };
+  }, [editor]);
+
+  // Track active heading. note-scroll is the scroll container; capture phase
+  // on window catches it regardless. We use domAtPos to get live DOM refs
+  // instead of querying by ID (TipTap replaces nodes, wiping stamped IDs).
+  useEffect(() => {
+    if (headings.length === 0) return;
+    const update = () => {
+      const threshold = window.innerHeight * 0.35;
+      let active = headings[0].id;
+      for (const h of headings) {
+        const el = getHeadingEl(editor, h.pos);
+        if (el && el.getBoundingClientRect().top <= threshold) active = h.id;
+      }
+      setActiveId(active);
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    return () => window.removeEventListener('scroll', update, true);
+  }, [headings, editor]);
+
+  const handleClick = (h: HeadingItem) => {
+    const el = getHeadingEl(editor, h.pos);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActiveId(h.id);
+    }
+  };
+
+  if (headings.length === 0) return null;
+
+  return (
+    <nav className="note-toc">
+      <div className="note-toc-inner">
+        <div className="note-toc-label">Contents</div>
+        {headings.map((h) => (
+          <button
+            key={h.id}
+            className={`note-toc-link${h.level >= 3 ? ' sub' : ''}${activeId === h.id ? ' active' : ''}`}
+            onClick={() => handleClick(h)}
+          >
+            {h.text}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+// ---- Main component ----
 
 export default function NoteView() {
   const { projectId, noteId } = useParams<{ projectId: string; noteId: string }>();
@@ -168,8 +278,12 @@ export default function NoteView() {
         />
       </div>
 
-      <div className="note-scroll">
-        <EditorContent editor={editor} />
+      <div className="note-content">
+        <div className="note-toc-trigger" />
+        {editor && <NoteTOC editor={editor} />}
+        <div className="note-scroll">
+          <EditorContent editor={editor} />
+        </div>
       </div>
     </div>
   );

@@ -1869,6 +1869,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 }
 .report-content {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   position: relative;
@@ -1887,8 +1888,11 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   box-sizing: border-box;
 }
 .report-toc {
-  width: 180px;
-  flex-shrink: 0;
+  position: absolute;
+  left: max(4px, calc(50% - 576px));
+  top: 0;
+  bottom: 0;
+  width: 160px;
   padding-top: 20px;
   overflow-y: auto;
 }
@@ -1974,6 +1978,12 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   width: 100%;
   overflow: hidden;
 }
+@container (min-width: 901px) {
+  .report-toc {
+    pointer-events: auto;
+    z-index: 1;
+  }
+}
 @container (max-width: 900px) {
   .report-toc-trigger {
     display: block;
@@ -1985,10 +1995,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
     z-index: 11;
   }
   .report-toc {
-    position: absolute;
     left: 0;
-    top: 0;
-    bottom: 0;
     width: 200px;
     z-index: 10;
     background: var(--bg);
@@ -2164,6 +2171,13 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   min-height: 0;
   animation: fadeIn 0.2s ease;
 }
+.note-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
 .note-scroll {
   flex: 1;
   overflow-y: auto;
@@ -2172,6 +2186,115 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   margin: 0 auto;
   padding: 40px 24px 80px;
   box-sizing: border-box;
+}
+.note-toc {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 180px;
+  overflow-y: auto;
+  padding-top: 20px;
+}
+.note-toc-inner {
+  padding-right: 16px;
+}
+.note-toc-trigger {
+  display: none;
+}
+.note-toc-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 0 6px 6px;
+  opacity: 0.7;
+}
+.note-toc-link {
+  display: block;
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  line-height: 1.45;
+  opacity: 0.65;
+}
+.note-toc-link:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+.note-toc-link.active {
+  opacity: 1;
+  color: var(--accent);
+  font-weight: 600;
+}
+.note-toc-link.sub {
+  padding-left: 14px;
+  font-size: 10.5px;
+}
+/* Wide: TOC is always visible in the gutter */
+@container (min-width: 901px) {
+  .note-toc {
+    /* Positioned just left of the centered 800px content area */
+    left: max(4px, calc(50% - 576px));
+    width: 160px;
+    background: transparent;
+    border-right: none;
+    box-shadow: none;
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+    transition: none;
+    z-index: 1;
+  }
+  /* Single-panel notes use max-width: 900px */
+  .content-area:has(.panel:only-child) .note-toc {
+    left: max(4px, calc(50% - 626px));
+  }
+  /* Narrow width mode: multi-panel 620px content */
+  [data-width="narrow"] .note-toc {
+    left: max(4px, calc(50% - 486px));
+  }
+  /* Narrow width mode: single-panel 680px content */
+  [data-width="narrow"] .content-area:has(.panel:only-child) .note-toc {
+    left: max(4px, calc(50% - 516px));
+  }
+}
+@container (max-width: 900px) {
+  .note-toc-trigger {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 16px;
+    z-index: 11;
+  }
+  .note-toc {
+    width: 200px;
+    z-index: 10;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(-100%);
+    opacity: 0;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    pointer-events: none;
+  }
+  .note-toc-trigger:hover + .note-toc,
+  .note-toc:hover {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .note-body {
   font-size: 12.5px;
@@ -2436,6 +2559,12 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .content-area:has(.panel:only-child) .panel-body .chat-title-bar {
   padding-left: 32px;
   padding-right: 32px;
+}
+/* Reports: title bar must match report-layout (800px wide, 24px padding), not note values */
+.content-area:has(.panel:only-child) .report-page .doc-title-bar {
+  max-width: 800px;
+  padding-left: 24px;
+  padding-right: 24px;
 }
 .content-area:has(.panel:only-child) .panel-body .chat-messages {
   padding-left: 32px;
