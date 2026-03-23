@@ -24,6 +24,60 @@ function readFileAsBase64(file: File): Promise<string> {
 
 marked.setOptions({ breaks: true });
 
+// ---- Chat TOC ----
+
+interface ChatSection { timestamp: string; content: string; }
+
+function ChatTOC({ messages }: { messages: ChatMessage[] }) {
+  const [activeTs, setActiveTs] = useState('');
+
+  const sections: ChatSection[] = messages
+    .filter((m): m is ChatMessage & { role: 'section' } => m.role === 'section' && !!m.content.trim())
+    .map((m) => ({ timestamp: m.timestamp, content: m.content.trim() }));
+
+  useEffect(() => {
+    if (sections.length === 0) return;
+    const update = () => {
+      const threshold = window.innerHeight * 0.35;
+      let active = sections[0].timestamp;
+      for (const s of sections) {
+        const el = document.querySelector(`[data-section-ts="${s.timestamp}"]`);
+        if (el && el.getBoundingClientRect().top <= threshold) active = s.timestamp;
+      }
+      setActiveTs(active);
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    return () => window.removeEventListener('scroll', update, true);
+  }, [sections.map((s) => s.timestamp).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleClick = (s: ChatSection) => {
+    const el = document.querySelector(`[data-section-ts="${s.timestamp}"]`);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); setActiveTs(s.timestamp); }
+  };
+
+  if (sections.length === 0) return null;
+
+  return (
+    <nav className="chat-toc">
+      <div className="chat-toc-inner">
+        <div className="chat-toc-label">Contents</div>
+        {sections.map((s) => (
+          <button
+            key={s.timestamp}
+            className={`chat-toc-link${activeTs === s.timestamp ? ' active' : ''}`}
+            onClick={() => handleClick(s)}
+          >
+            {s.content}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+// ---- Main component ----
+
 export default function ChatView() {
   const { projectId, chatId } = useParams<{ projectId: string; chatId: string }>();
 
@@ -38,6 +92,7 @@ export default function ChatView() {
   const [toolTrace, setToolTrace] = useState<ChatToolEvent[]>([]);
   const [pendingEdits, setPendingEdits] = useState<(NoteEdit & { _messageIndex: number; _accepted?: boolean; _rejected?: boolean })[]>([]);
   const [savedTraces, setSavedTraces] = useState<Record<number, ChatToolEvent[]>>({});
+  const [editingSectionIndex, setEditingSectionIndex] = useState<number | null>(null);
 
   // File attachments
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -49,6 +104,7 @@ export default function ChatView() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const suppressScrollRef = useRef(false);
 
   // Editable title
   const titleDivRef = useRef<HTMLDivElement>(null);
@@ -95,8 +151,10 @@ export default function ChatView() {
     return () => { el.removeEventListener('scroll', onScroll); clearTimeout(timer); };
   }, []);
 
-  // Auto-scroll to bottom when messages change or trace grows
+  // Auto-scroll to bottom when messages change or trace grows.
+  // Suppressed when inserting a section (we want to stay in place).
   useEffect(() => {
+    if (suppressScrollRef.current) { suppressScrollRef.current = false; return; }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chat?.messages.length, sending, toolTrace.length]);
 
@@ -231,7 +289,7 @@ export default function ChatView() {
       // Only send messages that aren't already covered by the stored summary.
       // The server will summarize further if this slice is still too large.
       const summaryUpToIndex = chat.summaryUpToIndex ?? 0;
-      const sliced = updatedMessages.slice(summaryUpToIndex);
+      const sliced = updatedMessages.slice(summaryUpToIndex).filter(m => m.role !== 'section');
       const apiMessages = sliced.map((m, i) => ({
         role: m.role,
         content: m.content,
@@ -311,6 +369,33 @@ export default function ChatView() {
     }
   };
 
+  const insertSection = async (afterIndex: number) => {
+    if (!chatId || !chat) return;
+    suppressScrollRef.current = true;
+    const newSection: ChatMessage = { role: 'section', content: '', timestamp: new Date().toISOString() };
+    const newMessages = [
+      ...chat.messages.slice(0, afterIndex + 1),
+      newSection,
+      ...chat.messages.slice(afterIndex + 1),
+    ];
+    await updateDoc<Chat>(chatId, { messages: newMessages });
+    setEditingSectionIndex(afterIndex + 1);
+  };
+
+  const saveSection = async (index: number, text: string) => {
+    if (!chatId || !chat) return;
+    const trimmed = text.trim();
+    if (!trimmed) {
+      // Delete empty sections on blur
+      const newMessages = chat.messages.filter((_, i) => i !== index);
+      await updateDoc<Chat>(chatId, { messages: newMessages });
+    } else {
+      const newMessages = chat.messages.map((m, i) => i === index ? { ...m, content: trimmed } : m);
+      await updateDoc<Chat>(chatId, { messages: newMessages });
+    }
+    setEditingSectionIndex(null);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -371,12 +456,42 @@ export default function ChatView() {
         />
       </div>
 
+      <div className="chat-body">
+        <div className="chat-toc-trigger" />
+        <ChatTOC messages={chat.messages} />
       <div className="chat-messages" ref={messagesRef}>
           {chat.messages.length === 0 && !sending && (
             <div className="chat-empty">Start a conversation…</div>
           )}
 
           {chat.messages.map((msg, i) => {
+            // ---- Section header ----
+            if (msg.role === 'section') {
+              return (
+                <div key={msg.timestamp} className="chat-section-wrap" data-section-ts={msg.timestamp}>
+                  <div
+                    className="chat-section-header"
+                    contentEditable
+                    suppressContentEditableWarning
+                    data-placeholder="Untitled section"
+                    ref={(el) => { if (el && editingSectionIndex === i) { el.focus(); } }}
+                    onBlur={(e) => saveSection(i, e.currentTarget.textContent || '')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); }
+                      if (e.key === 'Escape') { (e.target as HTMLElement).blur(); }
+                    }}
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+                    }}
+                  >
+                    {msg.content}
+                  </div>
+                </div>
+              );
+            }
+
+            // ---- Normal message ----
             const editsForMessage = pendingEdits
               .map((e, idx) => ({ ...e, _globalIndex: idx }))
               .filter((e) => e._messageIndex === i && !e._rejected);
@@ -438,6 +553,11 @@ export default function ChatView() {
                     msg.content && <div className="chat-message-content">{msg.content}</div>
                   )}
                 </div>
+                <button
+                  className="chat-section-btn"
+                  onClick={() => insertSection(i)}
+                  title="Add section below"
+                >#</button>
 
                 {editsForMessage.length > 0 && (
                   <div className="chat-edit-proposals">
@@ -513,6 +633,7 @@ export default function ChatView() {
 
           <div ref={messagesEndRef} />
       </div>
+      </div>{/* end .chat-body */}
 
       <div className="chat-input-area">
         {pendingFiles.length > 0 && (

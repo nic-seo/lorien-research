@@ -2557,6 +2557,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .content-area:has(.panel:only-child) .panel-body .chat-messages,
 .content-area:has(.panel:only-child) .panel-body .chat-input-area {
   max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
 }
 .content-area:has(.panel:only-child) .panel-body .doc-title-bar,
 .content-area:has(.panel:only-child) .panel-body .chat-title-bar {
@@ -2610,6 +2612,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 [data-width="narrow"] .content-area:has(.panel:only-child) .project-detail-scroll,
 [data-width="narrow"] .content-area:has(.panel:only-child) .note-scroll {
   max-width: 680px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* Panel drag-and-drop */
@@ -2780,7 +2784,6 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   padding: 0 12px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 28px;
 }
 .chat-messages::-webkit-scrollbar { width: 5px; }
 .chat-messages::-webkit-scrollbar-track { background: transparent; }
@@ -2822,15 +2825,168 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   color: var(--text-secondary);
   font-size: 13px;
 }
+/* ---- Chat body & TOC ---- */
+.chat-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.chat-toc {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 180px;
+  overflow-y: auto;
+  padding-top: 20px;
+}
+.chat-toc-inner { padding-right: 16px; }
+.chat-toc-trigger { display: none; }
+.chat-toc-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 0 6px 6px;
+  opacity: 0.7;
+}
+.chat-toc-link {
+  display: block;
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  line-height: 1.45;
+  opacity: 0.65;
+}
+.chat-toc-link:hover { opacity: 1; color: var(--accent); }
+.chat-toc-link.active { opacity: 1; color: var(--accent); font-weight: 600; }
+
+/* Wide: gutter mode — chat single-panel is 900px, same calc as note */
+@container (min-width: 901px) {
+  .chat-toc {
+    left: max(4px, calc(50% - 626px));
+    width: 160px;
+    background: transparent;
+    border-right: none;
+    box-shadow: none;
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+    transition: none;
+    z-index: 1;
+  }
+  [data-width="narrow"] .chat-toc {
+    left: max(4px, calc(50% - 516px));
+  }
+}
+/* Narrow: slide-in popup */
+@container (max-width: 900px) {
+  .chat-toc-trigger {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 16px;
+    z-index: 11;
+  }
+  .chat-toc {
+    width: 200px;
+    z-index: 10;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(-100%);
+    opacity: 0;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    pointer-events: none;
+  }
+  .chat-toc-trigger:hover + .chat-toc,
+  .chat-toc:hover {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ---- Chat sections ---- */
+.chat-section-wrap {
+  align-self: stretch;
+  padding: 4px 0 8px;
+}
+.chat-section-header {
+  font-size: 17px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: var(--pink);
+  text-decoration-thickness: 0.35em;
+  text-underline-offset: -0.1em;
+  text-decoration-skip-ink: none;
+  outline: none;
+  cursor: text;
+  min-width: 40px;
+  display: inline-block;
+}
+.chat-section-header:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-secondary);
+  font-style: italic;
+  pointer-events: none;
+}
+
+/* ---- Section # button ---- */
+/* Button lives in .chat-message-wrap (outside the bubble), positioned in the
+   reserved padding-bottom so it never shifts layout on appear/disappear. */
 .chat-message-wrap {
   display: flex;
   flex-direction: column;
   align-self: flex-start;
   max-width: 85%;
+  position: relative;
+  padding-bottom: 28px; /* always reserves space — button fades in here */
 }
 .chat-message-wrap-user {
   align-self: flex-end;
   max-width: 60%;
+}
+.chat-section-btn {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  cursor: pointer;
+  line-height: 1.6;
+  transition: opacity 0.12s;
+  z-index: 1;
+}
+.chat-message-wrap:hover .chat-section-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.chat-section-btn:hover {
+  color: var(--text);
+  border-color: var(--text-secondary);
 }
 .chat-message {
   line-height: 1.7;

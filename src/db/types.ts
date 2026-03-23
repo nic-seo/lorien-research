@@ -42,7 +42,7 @@ export interface Note extends BaseDoc {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'section';
   content: string;
   timestamp: string;
   attachmentIds?: string[];
