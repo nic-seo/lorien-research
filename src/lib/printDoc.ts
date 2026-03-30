@@ -107,6 +107,23 @@ const BASE_CSS = `
   strong { font-weight: 600; }
   em { font-style: italic; }
   a  { color: #1a1a1a; text-decoration: underline; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 11px;
+  }
+  th, td {
+    border: 1px solid #c8c4bc;
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #eeece8;
+    font-weight: 600;
+  }
+  tr:nth-child(even) td { background: #f5f4f1; }
 `;
 
 // ── Report ──────────────────────────────────────────────────────────────────

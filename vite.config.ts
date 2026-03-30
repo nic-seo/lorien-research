@@ -8,6 +8,8 @@ export default defineConfig({
     include: ['pouchdb', 'pouchdb-find'],
   },
   server: {
+    port: 5173,
+    strictPort: true, // fail loudly rather than silently switching ports (would change origin and wipe localStorage)
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

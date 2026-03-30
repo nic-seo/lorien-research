@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { useDoc, useProjectDocs, useLinks } from '../../db/hooks';
-import { updateDoc, getDoc, createAttachment, getAttachmentBlob } from '../../db';
+import { updateDoc, getDoc, createAttachment, getAttachmentBlob, forkChat } from '../../db';
 import { sendChatMessage, generateChatTitle } from '../../lib/api';
+import { usePanelNavigate } from '../../panels/usePanelNavigate';
 import type { ChatToolEvent, LinkedNoteInput, NoteEdit } from '../../lib/api';
 import type { Chat, ChatMessage, Project, Report, Note } from '../../db/types';
 import DocHeader from './DocHeader';
@@ -85,6 +86,9 @@ export default function ChatView() {
   const { doc: project } = useDoc<Project>(projectId || null);
   const { docs: reports } = useProjectDocs<Report>('report', projectId || null);
   const { links } = useLinks(chatId || null);
+  const { doc: forkedFromChat } = useDoc<Chat>(chat?.forkedFromId ?? null);
+
+  const panelNavigate = usePanelNavigate();
 
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -369,6 +373,16 @@ export default function ChatView() {
     }
   };
 
+  const handleFork = async (messageIndex: number, e: React.MouseEvent) => {
+    if (!chatId || !chat || !projectId) return;
+    try {
+      const forked = await forkChat(chatId, messageIndex);
+      panelNavigate(`/project/${projectId}/chat/${forked._id}`, e);
+    } catch {
+      setError('Failed to fork chat.');
+    }
+  };
+
   const insertSection = async (afterIndex: number) => {
     if (!chatId || !chat) return;
     suppressScrollRef.current = true;
@@ -455,6 +469,29 @@ export default function ChatView() {
           }}
         />
       </div>
+
+      {chat.forkedFromId && (
+        <div className="chat-fork-banner">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
+            <path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
+          Forked from{' '}
+          {forkedFromChat ? (
+            <button
+              className="chat-fork-banner-link"
+              onClick={(e) => panelNavigate(`/project/${projectId}/chat/${chat.forkedFromId}`, e)}
+            >
+              {forkedFromChat.title}
+            </button>
+          ) : (
+            <span>original chat</span>
+          )}
+          {chat.forkedAtIndex != null && (
+            <span className="chat-fork-banner-meta">· message {chat.forkedAtIndex + 1}</span>
+          )}
+        </div>
+      )}
 
       <div className="chat-body">
         <div className="chat-toc-trigger" />
@@ -553,11 +590,13 @@ export default function ChatView() {
                     msg.content && <div className="chat-message-content">{msg.content}</div>
                   )}
                 </div>
-                <button
-                  className="chat-section-btn"
-                  onClick={() => insertSection(i)}
-                  title="Add section below"
-                >#</button>
+                <div className="chat-msg-actions">
+                  <button
+                    className="chat-action-btn"
+                    onClick={() => insertSection(i)}
+                    title="Add section below"
+                  >#</button>
+                </div>
 
                 {editsForMessage.length > 0 && (
                   <div className="chat-edit-proposals">
@@ -682,6 +721,17 @@ export default function ChatView() {
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+            </svg>
+          </button>
+          <button
+            className="chat-attach-btn"
+            onClick={(e) => handleFork(chat.messages.length - 1, e)}
+            title="Fork chat"
+            disabled={sending || chat.messages.length === 0}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
+              <path d="M18 9a9 9 0 0 1-9 9"/>
             </svg>
           </button>
         </div>

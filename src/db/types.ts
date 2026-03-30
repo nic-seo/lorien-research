@@ -66,6 +66,10 @@ export interface Chat extends BaseDoc {
   summary?: string;
   /** Index of the first message NOT yet covered by the summary. */
   summaryUpToIndex?: number;
+  /** Set when this chat was forked from another. */
+  forkedFromId?: string;
+  /** The message index (inclusive) at which the fork was taken. */
+  forkedAtIndex?: number;
 }
 
 export type RefType = 'video' | 'blog' | 'paper' | 'link' | 'book' | 'podcast';

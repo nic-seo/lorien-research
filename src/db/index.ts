@@ -1,7 +1,7 @@
 import PouchDB from 'pouchdb';
 import PouchDBFind from 'pouchdb-find';
 import { makeId } from '../lib/ulid';
-import type { AnyDoc, DocType, Link, QueueItem, Reference } from './types';
+import type { AnyDoc, Chat, DocType, Link, QueueItem, Reference } from './types';
 
 PouchDB.plugin(PouchDBFind);
 
@@ -63,6 +63,19 @@ export async function updateDoc<T extends AnyDoc>(
 export async function deleteDoc(id: string): Promise<void> {
   const doc = await db.get(id);
   await db.remove(doc);
+}
+
+/** Create a new chat forked from sourceChatId, including messages up to and including upToIndex. */
+export async function forkChat(sourceChatId: string, upToIndex: number): Promise<Chat> {
+  const source = await getDoc<Chat>(sourceChatId);
+  const forkedMessages = source.messages.slice(0, upToIndex + 1);
+  return createDoc<Chat>('chat', {
+    projectId: source.projectId,
+    title: `${source.title} (fork)`,
+    messages: forkedMessages,
+    forkedFromId: sourceChatId,
+    forkedAtIndex: upToIndex,
+  });
 }
 
 /**
