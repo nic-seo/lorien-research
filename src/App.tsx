@@ -86,6 +86,7 @@ function AppLayout() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.code === 'KeyN') {
+        console.log('[lorien] Ctrl+N keydown fired, calling loadSession');
         e.preventDefault();
         e.stopPropagation();
         loadSession(['/']);
@@ -117,7 +118,22 @@ function AppLayout() {
       }
     };
     window.addEventListener('keydown', handler, { capture: true });
-    return () => window.removeEventListener('keydown', handler, { capture: true });
+
+    // In Electron, Ctrl+N is intercepted at the OS level via globalShortcut and
+    // delivered as an IPC message — the keydown event never reaches the renderer.
+    const unsubShortcut = window.electronAPI?.onAppShortcut((shortcut) => {
+      console.log('[lorien] onAppShortcut received:', shortcut);
+      if (shortcut === 'new-session') {
+        loadSession(['/']);
+        window.dispatchEvent(new CustomEvent('lorien-new-session'));
+      }
+    });
+    console.log('[lorien] keyboard handler registered, electronAPI:', !!window.electronAPI);
+
+    return () => {
+      window.removeEventListener('keydown', handler, { capture: true });
+      unsubShortcut?.();
+    };
   }, [addPanel, getFirstPanelPath, loadSession]);
 
   return (

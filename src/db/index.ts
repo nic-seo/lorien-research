@@ -1,7 +1,7 @@
 import PouchDB from 'pouchdb';
 import PouchDBFind from 'pouchdb-find';
 import { makeId } from '../lib/ulid';
-import type { AnyDoc, Chat, DocType, Link, QueueItem, Reference } from './types';
+import type { AnyDoc, Chat, ChatAttachment, DocType, Link, QueueItem, Reference } from './types';
 
 PouchDB.plugin(PouchDBFind);
 
@@ -258,6 +258,18 @@ export async function createAttachment(
 export async function getAttachmentBlob(docId: string): Promise<Blob> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (db as any).getAttachment(docId, 'file') as Promise<Blob>;
+}
+
+export async function getAttachmentData(docId: string): Promise<{ name: string; mimeType: string; data: string }> {
+  const doc = await getDoc<ChatAttachment>(docId);
+  const blob = await getAttachmentBlob(docId);
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+  return { name: doc.name, mimeType: doc.mimeType, data };
 }
 
 // --- Change feed ---

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { useDoc, useProjectDocs, useLinks } from '../../db/hooks';
-import { updateDoc, getDoc, createAttachment, getAttachmentBlob, forkChat } from '../../db';
+import { updateDoc, getDoc, createAttachment, getAttachmentBlob, getAttachmentData, forkChat } from '../../db';
 import { sendChatMessage, generateChatTitle } from '../../lib/api';
 import { usePanelNavigate } from '../../panels/usePanelNavigate';
 import type { ChatToolEvent, LinkedNoteInput, NoteEdit } from '../../lib/api';
@@ -191,7 +191,7 @@ export default function ChatView() {
   // Revoke blob URLs on unmount
   useEffect(() => {
     const urlMap = blobUrlsRef.current;
-    return () => urlMap.forEach((u) => URL.revokeObjectURL(u));
+    return () => urlMap.forEach((u) => URL.revokeObjectURL(u.url));
   }, []);
 
   // Auto-resize textarea
@@ -293,12 +293,46 @@ export default function ChatView() {
       // Only send messages that aren't already covered by the stored summary.
       // The server will summarize further if this slice is still too large.
       const summaryUpToIndex = chat.summaryUpToIndex ?? 0;
-      const sliced = updatedMessages.slice(summaryUpToIndex).filter(m => m.role !== 'section');
-      const apiMessages = sliced.map((m, i) => ({
-        role: m.role,
-        content: m.content,
-        // Attach file data only on the last (just-sent) user message
-        ...(i === sliced.length - 1 && fileData.length > 0 && { attachments: fileData }),
+      const sliced = updatedMessages.slice(summaryUpToIndex).filter(
+        (m): m is ChatMessage & { role: 'user' | 'assistant' } => m.role !== 'section'
+      );
+
+      // Build attachment cache: binary data keyed by attachment ID.
+      // Current message's files are already in memory; historical ones are fetched from PouchDB.
+      // The cache is passed to the server so the model can recall any attachment on demand via
+      // the recall_attachment tool instead of receiving all binaries on every request.
+      const attachmentCache: Record<string, { name: string; mimeType: string; data: string }> = {};
+
+      // Seed cache with current message's files (avoids double-fetching from DB)
+      for (let k = 0; k < attachmentIds.length; k++) {
+        attachmentCache[attachmentIds[k]] = fileData[k];
+      }
+
+      const apiMessages = await Promise.all(sliced.map(async (m, i) => {
+        // Current message: send binary inline so the model sees it immediately
+        if (i === sliced.length - 1 && fileData.length > 0) {
+          return { role: m.role, content: m.content, attachments: fileData };
+        }
+        // Historical messages: annotate with a lightweight text reference and cache the binary.
+        // The model can use recall_attachment to retrieve the binary only when needed.
+        if (m.attachmentIds && m.attachmentIds.length > 0) {
+          try {
+            const annotations: string[] = [];
+            for (const id of m.attachmentIds) {
+              if (!attachmentCache[id]) {
+                const att = await getAttachmentData(id);
+                attachmentCache[id] = att;
+              }
+              const att = attachmentCache[id];
+              annotations.push(`[Attached: ${att.name} (${att.mimeType}, id: ${id})]`);
+            }
+            const annotated = m.content + (annotations.length > 0 ? '\n' + annotations.join('\n') : '');
+            return { role: m.role, content: annotated };
+          } catch {
+            return { role: m.role, content: m.content };
+          }
+        }
+        return { role: m.role, content: m.content };
       }));
 
       const projectContext = {
@@ -330,6 +364,7 @@ export default function ChatView() {
         chat.summary,
         (event) => setToolTrace((prev) => [...prev, event]),
         linkedNotes,
+        Object.keys(attachmentCache).length > 0 ? attachmentCache : undefined,
       );
 
       const assistantMessage: ChatMessage = {
@@ -547,13 +582,16 @@ export default function ChatView() {
                           <span className="chat-trace-icon">
                             {event.tool === 'web_search' ? '⌕' :
                              event.tool === 'read_note' ? '📖' :
-                             event.tool === 'edit_note' ? '✏️' : '↗'}
+                             event.tool === 'edit_note' ? '✏️' :
+                             event.tool === 'recall_attachment' ? '📎' : '↗'}
                           </span>
                           <span className="chat-trace-label">
                             {event.tool === 'web_search'
                               ? event.query
                               : event.tool === 'read_note' || event.tool === 'edit_note'
                               ? event.noteTitle
+                              : event.tool === 'recall_attachment'
+                              ? event.attachmentName
                               : event.domain ?? event.url}
                           </span>
                         </div>
@@ -652,13 +690,16 @@ export default function ChatView() {
                       <span className="chat-trace-icon">
                         {event.tool === 'web_search' ? '⌕' :
                          event.tool === 'read_note' ? '📖' :
-                         event.tool === 'edit_note' ? '✏️' : '↗'}
+                         event.tool === 'edit_note' ? '✏️' :
+                         event.tool === 'recall_attachment' ? '📎' : '↗'}
                       </span>
                       <span className="chat-trace-label">
                         {event.tool === 'web_search'
                           ? event.query
                           : event.tool === 'read_note' || event.tool === 'edit_note'
                           ? event.noteTitle
+                          : event.tool === 'recall_attachment'
+                          ? event.attachmentName
                           : event.domain ?? event.url}
                       </span>
                     </div>

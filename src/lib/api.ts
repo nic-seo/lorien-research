@@ -111,7 +111,7 @@ export interface SendChatResult {
 
 export interface ChatToolEvent {
   type: 'tool';
-  tool: 'web_search' | 'read_page' | 'read_note' | 'edit_note';
+  tool: 'web_search' | 'read_page' | 'read_note' | 'edit_note' | 'recall_attachment';
   /** Populated when tool === 'web_search' */
   query?: string;
   /** Populated when tool === 'read_page' */
@@ -119,6 +119,8 @@ export interface ChatToolEvent {
   domain?: string;
   /** Populated when tool === 'read_note' or 'edit_note' */
   noteTitle?: string;
+  /** Populated when tool === 'recall_attachment' */
+  attachmentName?: string;
 }
 
 export async function sendChatMessage(
@@ -127,11 +129,12 @@ export async function sendChatMessage(
   summary?: string,
   onTool?: (event: ChatToolEvent) => void,
   linkedNotes?: LinkedNoteInput[],
+  attachmentCache?: Record<string, MessageAttachment>,
 ): Promise<SendChatResult> {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, projectContext, summary, linkedNotes }),
+    body: JSON.stringify({ messages, projectContext, summary, linkedNotes, attachmentCache }),
     // Chat may do 1-2 web searches before responding
     signal: AbortSignal.timeout(2 * 60 * 1000),
   });

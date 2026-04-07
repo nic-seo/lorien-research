@@ -381,11 +381,12 @@ export function createServer(port: number, options?: {
   app.post('/api/chat', async (req: express.Request, res: express.Response) => {
     if (!requireApiKey(res)) return;
 
-    const { messages, projectContext, summary: existingSummary, linkedNotes } = req.body as {
+    const { messages, projectContext, summary: existingSummary, linkedNotes, attachmentCache } = req.body as {
       messages?: { role: string; content: string; attachments?: { name: string; mimeType: string; data: string }[] }[];
       projectContext?: { title: string; description: string; reportTitles: string[] };
       summary?: string;
       linkedNotes?: { id: string; title: string; content: string }[];
+      attachmentCache?: Record<string, { name: string; mimeType: string; data: string }>;
     };
 
     // Validate before SSE headers so we can return a plain JSON error
@@ -456,6 +457,15 @@ export function createServer(port: number, options?: {
       systemPrompt += `\n\nIMPORTANT: Only use edit_note when the user explicitly asks you to modify, update, or add content to a note. Never proactively edit notes — reading them to inform your answers is fine, but changes require a clear user request.`;
     }
 
+    // Inform the model about attachments available for recall
+    const cacheEntries = attachmentCache ? Object.entries(attachmentCache) : [];
+    if (cacheEntries.length > 0) {
+      const attachmentList = cacheEntries
+        .map(([id, a]) => `- "${a.name}" (${a.mimeType}, id: ${id})`)
+        .join('\n');
+      systemPrompt += `\n\nAttachments available for recall:\n${attachmentList}\n\nWhen the user refers to a previously shared file or you need to analyze its contents, use the recall_attachment tool with the attachment's id to retrieve the binary content. Only call recall_attachment when you actually need to examine the file — do not recall it speculatively.`;
+    }
+
     // Build tool set: always include web tools, add note tools when linked notes exist
     const chatTools: Anthropic.Messages.Tool[] = [...TOOLS];
     if (noteMap.size > 0) {
@@ -502,7 +512,27 @@ export function createServer(port: number, options?: {
       );
     }
 
-    console.log(`[chat] Project "${projectContext.title}" — ${messages.length} messages, summary: ${existingSummary ? existingSummary.length + ' chars' : 'none'}, linked notes: ${noteMap.size}`);
+    // Add recall_attachment tool when there are attachments in the cache
+    if (cacheEntries.length > 0) {
+      chatTools.push({
+        name: 'recall_attachment',
+        description:
+          'Retrieve the binary content of an attachment from the conversation history. ' +
+          'Use this when you need to reason about or analyze a file that was shared in an earlier message.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            attachmentId: {
+              type: 'string',
+              description: 'The attachment ID to retrieve (e.g. "attachment:01HXK...").',
+            },
+          },
+          required: ['attachmentId'],
+        },
+      });
+    }
+
+    console.log(`[chat] Project "${projectContext.title}" — ${messages.length} messages, summary: ${existingSummary ? existingSummary.length + ' chars' : 'none'}, linked notes: ${noteMap.size}, cached attachments: ${cacheEntries.length}`);
 
     try {
       // --- History management ---
@@ -651,9 +681,12 @@ export function createServer(port: number, options?: {
             } else if (block.name === 'edit_note') {
               const note = noteMap.get(input.noteId as string);
               emit({ type: 'tool', tool: 'edit_note', noteTitle: note?.title ?? input.noteId as string });
+            } else if (block.name === 'recall_attachment') {
+              const cached = attachmentCache?.[input.attachmentId as string];
+              emit({ type: 'tool', tool: 'recall_attachment', attachmentName: cached?.name ?? input.attachmentId as string });
             }
 
-            let result: string;
+            let result: string | Anthropic.Messages.ContentBlockParam[];
             if (block.name === 'web_search') {
               result = await executeWebSearch(
                 input.query as string,
@@ -685,6 +718,31 @@ export function createServer(port: number, options?: {
                 });
                 result = `Edit proposed successfully. The user will be asked to confirm before it's applied.`;
               }
+            } else if (block.name === 'recall_attachment') {
+              const cached = attachmentCache?.[input.attachmentId as string];
+              if (!cached) {
+                result = `Error: Attachment "${input.attachmentId}" not found. Available attachment IDs: ${cacheEntries.map(([id]) => id).join(', ') || 'none'}`;
+              } else if (cached.mimeType === 'application/pdf') {
+                result = [
+                  { type: 'text', text: `Here is the attachment "${cached.name}":` },
+                  {
+                    type: 'document',
+                    source: { type: 'base64', media_type: 'application/pdf', data: cached.data },
+                  } as Anthropic.Messages.ContentBlockParam,
+                ];
+              } else {
+                result = [
+                  { type: 'text', text: `Here is the attachment "${cached.name}":` },
+                  {
+                    type: 'image',
+                    source: {
+                      type: 'base64',
+                      media_type: cached.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                      data: cached.data,
+                    },
+                  } as Anthropic.Messages.ContentBlockParam,
+                ];
+              }
             } else {
               result = `Unknown tool: ${block.name}`;
             }
@@ -693,7 +751,7 @@ export function createServer(port: number, options?: {
               type: 'tool_result',
               tool_use_id: block.id,
               content: result,
-            });
+            } as Anthropic.Messages.ToolResultBlockParam);
           }
 
           chatMessages.push({ role: 'user', content: toolResults });
