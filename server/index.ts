@@ -195,9 +195,9 @@ async function executeTwitterSearch(query: string, count: number = 20, sort: str
       return 'No tweets found for this query.';
     }
 
-    // Log first tweet keys so we can verify field names on first use
+    // Log first tweet structure so we can verify field names
     console.log(`[twitter] first tweet keys: ${Object.keys(tweets[0]).join(', ')}`);
-    console.log(`[twitter] first tweet sample: ${JSON.stringify(tweets[0]).slice(0, 500)}`);
+    console.log(`[twitter] first tweet sample: ${JSON.stringify(tweets[0]).slice(0, 2000)}`);
 
     // Filter out any noResults sentinel objects
     const realTweets = tweets.filter((t) => !t.noResults);
@@ -208,17 +208,33 @@ async function executeTwitterSearch(query: string, count: number = 20, sort: str
     return realTweets.map((t, i) => {
       const raw = t;
       // Field names vary by actor — try all known variants
-      const author = (raw.author ?? raw.user ?? {}) as Record<string, unknown>;
-      const handle = (raw.screen_name ?? author.screen_name ?? author.userName ?? author.username ?? 'unknown') as string;
-      const name   = (raw.name ?? author.name ?? handle) as string;
-      const text   = ((raw.text ?? raw.full_text ?? raw.tweet_text ?? '') as string).trim();
-      const likes  = (raw.like_count ?? raw.likeCount ?? raw.favorite_count ?? raw.favouriteCount ?? 0) as number;
-      const rts    = (raw.retweet_count ?? raw.retweetCount ?? 0) as number;
-      const views  = (raw.views ?? raw.view_count ?? raw.viewCount ?? raw.impression_count ?? 0) as number;
-      const date   = (raw.created_at ?? raw.createdAt ?? raw.timestamp ?? '') as string;
+      const author = (raw.author ?? raw.user ?? raw.userProfile ?? {}) as Record<string, unknown>;
+      const metrics = (raw.public_metrics ?? raw.publicMetrics ?? {}) as Record<string, unknown>;
+
+      // Try every known handle field, then fall back to parsing it out of the tweet URL
+      const rawTweetUrl = (raw.url ?? raw.tweet_url ?? raw.tweetUrl ?? raw.permalink ?? raw.link ?? '') as string;
+      const urlUsernameMatch = rawTweetUrl.match(/(?:twitter\.com|x\.com)\/([^/?]+)\/status\//);
+      const handleRaw =
+        raw.screen_name ?? raw.username ?? raw.handle ??
+        raw.authorUsername ?? raw.author_username ?? raw.twitterUsername ?? raw.user_screen_name ??
+        author.screen_name ?? author.userName ?? author.username ?? author.handle ??
+        urlUsernameMatch?.[1];
+      const handle = (handleRaw ?? 'unknown') as string;
+
+      const name   = (raw.name ?? raw.authorName ?? raw.author_name ?? author.name ?? author.displayName ?? handle) as string;
+      const text   = ((raw.text ?? raw.full_text ?? raw.tweet_text ?? raw.content ?? '') as string).trim();
+      const likes  = (raw.like_count ?? raw.likeCount ?? raw.favorite_count ?? raw.favouriteCount ??
+                      metrics.like_count ?? 0) as number;
+      const rts    = (raw.retweet_count ?? raw.retweetCount ?? metrics.retweet_count ?? 0) as number;
+      const views  = (raw.views ?? raw.view_count ?? raw.viewCount ?? raw.impression_count ??
+                      metrics.impression_count ?? 0) as number;
+      const date   = (raw.created_at ?? raw.createdAt ?? raw.timestamp ?? raw.date ?? '') as string;
       const dateStr = date ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-      const tweetId = (raw.id ?? raw.id_str ?? raw.tweet_id ?? '') as string;
-      const tweetUrl = (raw.url ?? raw.tweet_url ?? (tweetId ? `https://x.com/${handle}/status/${tweetId}` : '')) as string;
+      const tweetId = (raw.id ?? raw.id_str ?? raw.tweet_id ?? raw.tweetId ?? '') as string;
+      // Prefer actor-provided URL (has real username); only construct if missing or still has 'unknown'
+      const tweetUrl = (rawTweetUrl && !rawTweetUrl.includes('/unknown/'))
+        ? rawTweetUrl
+        : (tweetId ? `https://x.com/${handle}/status/${tweetId}` : '');
 
       const meta = [
         dateStr,

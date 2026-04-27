@@ -2,6 +2,23 @@ import { useSearchParams } from 'react-router-dom';
 import { ExternalLink, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 
+/** Domains that refuse iframe embedding — show fallback immediately. */
+const IFRAME_BLOCKED_HOSTS = new Set([
+  'x.com', 'www.x.com',
+  'twitter.com', 'www.twitter.com', 't.co',
+  'instagram.com', 'www.instagram.com',
+  'facebook.com', 'www.facebook.com',
+  'linkedin.com', 'www.linkedin.com',
+]);
+
+function isIframeBlocked(url: string): boolean {
+  try {
+    return IFRAME_BLOCKED_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 export default function EmbedView() {
   const [searchParams] = useSearchParams();
   const url = searchParams.get('url') || '';
@@ -10,6 +27,8 @@ export default function EmbedView() {
   if (!url) {
     return <div className="page-loading">No URL specified.</div>;
   }
+
+  const blocked = isIframeBlocked(url) || loadError;
 
   return (
     <div className="embed-page">
@@ -28,12 +47,12 @@ export default function EmbedView() {
         </a>
       </div>
 
-      {loadError ? (
+      {blocked ? (
         <div className="embed-error">
           <AlertTriangle size={20} />
-          <p>This site cannot be embedded.</p>
+          <p>This site can't be embedded.</p>
           <a href={url} target="_blank" rel="noopener noreferrer">
-            Open in browser instead
+            Open in browser
           </a>
         </div>
       ) : (

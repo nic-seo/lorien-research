@@ -41,6 +41,26 @@ function findPanelIdFromEvent(event: MouseEvent): string | null {
   return null;
 }
 
+/**
+ * Domains that block iframe embedding (X-Frame-Options / CSP frame-ancestors).
+ * Links to these are opened directly in the external browser.
+ */
+const IFRAME_BLOCKED_HOSTS = new Set([
+  'x.com', 'www.x.com',
+  'twitter.com', 'www.twitter.com', 't.co',
+  'instagram.com', 'www.instagram.com',
+  'facebook.com', 'www.facebook.com',
+  'linkedin.com', 'www.linkedin.com',
+]);
+
+function isIframeBlocked(url: string): boolean {
+  try {
+    return IFRAME_BLOCKED_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /** Simple heuristic: YouTube/Vimeo → video, arXiv/Scholar → paper, else link. */
 function guessRefType(url: string): 'video' | 'paper' | 'link' {
   try {
@@ -84,6 +104,12 @@ export function useExternalLinkInterceptor(
       event.stopPropagation();
 
       const href = anchor.href;
+
+      // Sites that block iframe embedding: open in external browser directly
+      if (isIframeBlocked(href)) {
+        window.open(href, '_blank', 'noopener,noreferrer');
+        return;
+      }
 
       // 1. Open in new panel
       addPanelRef.current(`/embed?url=${encodeURIComponent(href)}`);
