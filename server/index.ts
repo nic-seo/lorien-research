@@ -11,6 +11,63 @@ const __dirname = typeof import.meta?.url === 'string' && import.meta.url.starts
   ? dirname(fileURLToPath(import.meta.url))
   : process.cwd();
 
+// --- Agent config ---
+
+interface AgentConfig {
+  name: string;
+  displayName: string;
+  tools: string[];
+  /** Max number of Claude API calls (rounds). Default 6. */
+  maxLoops: number;
+  /** Hard cap on total tool calls across all loops. Default 12. */
+  maxToolCalls?: number;
+  systemPrompt: string;
+}
+
+let loadedAgents: AgentConfig[] = [];
+
+function loadAgents(): void {
+  try {
+    const agentsPath = resolve(__dirname, 'agents.json');
+    const raw = readFileSync(agentsPath, 'utf-8');
+    loadedAgents = JSON.parse(raw) as AgentConfig[];
+    console.log(`[agents] Loaded ${loadedAgents.length} agent(s): ${loadedAgents.map((a) => a.name).join(', ')}`);
+  } catch {
+    console.log('[agents] No agents.json found or parse error — sub-agents disabled.');
+  }
+}
+
+function buildRunAgentTool(agents: AgentConfig[]): Anthropic.Messages.Tool {
+  const names = agents.map((a) => a.name);
+  const list = agents.map((a) => `"${a.name}" (${a.displayName})`).join(', ');
+  return {
+    name: 'run_agent',
+    description:
+      `Delegate a research task to a specialized sub-agent that will run its own multi-step investigation ` +
+      `and return a synthesized result. Use this when a task benefits from focused, iterative research — ` +
+      `for example, gathering comprehensive Twitter/X intelligence typically requires multiple targeted ` +
+      `searches and reading linked pages, which the Twitter agent handles better than a single search call. ` +
+      `Available agents: ${list}.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        agent: {
+          type: 'string',
+          enum: names,
+          description: 'The name of the agent to delegate to.',
+        },
+        task: {
+          type: 'string',
+          description:
+            'A clear, specific description of what to research. Include relevant context, ' +
+            'time period, or constraints the agent should know about.',
+        },
+      },
+      required: ['agent', 'task'],
+    },
+  };
+}
+
 // --- Mutable API clients (updated via updateKeys) ---
 
 let anthropic: Anthropic | null = null;
@@ -321,6 +378,109 @@ const TOOLS: Anthropic.Messages.Tool[] = [
   },
 ];
 
+// --- Sub-agent runner ---
+
+async function runSubAgent(
+  config: AgentConfig,
+  task: string,
+  emit: (event: object) => void,
+): Promise<string> {
+  const subMessages: Anthropic.Messages.MessageParam[] = [
+    { role: 'user', content: task },
+  ];
+
+  // Only give the sub-agent the tools listed in its config
+  const agentTools = TOOLS.filter((t) => config.tools.includes(t.name));
+
+  let loops = 0;
+  let totalToolCalls = 0;
+  const MAX_LOOPS = config.maxLoops ?? 6;
+  const MAX_TOOL_CALLS = config.maxToolCalls ?? 12;
+
+  while (loops++ < MAX_LOOPS) {
+    console.log(`[agent:${config.name}] Loop ${loops} (${totalToolCalls} tool calls so far)`);
+
+    const response = await anthropic!.messages.create(
+      {
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4096,
+        system: config.systemPrompt,
+        tools: agentTools,
+        messages: subMessages,
+      },
+      { timeout: 90_000 },
+    );
+
+    console.log(`[agent:${config.name}] Loop ${loops} — stop_reason: ${response.stop_reason}`);
+
+    if (response.stop_reason === 'end_turn') {
+      const textBlock = response.content.find((b) => b.type === 'text');
+      return textBlock?.type === 'text' ? textBlock.text.trim() : '(agent produced no text)';
+    }
+
+    if (response.stop_reason === 'tool_use') {
+      subMessages.push({ role: 'assistant', content: response.content });
+      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+
+      for (const block of response.content) {
+        if (block.type !== 'tool_use') continue;
+
+        if (totalToolCalls >= MAX_TOOL_CALLS) {
+          console.log(`[agent:${config.name}] Tool call cap (${MAX_TOOL_CALLS}) reached — stopping.`);
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: `Tool call limit reached. Synthesize findings from what you have so far.`,
+          } as Anthropic.Messages.ToolResultBlockParam);
+          continue;
+        }
+
+        totalToolCalls++;
+        const input = block.input as Record<string, unknown>;
+        console.log(`[agent:${config.name}]   Tool ${totalToolCalls}: ${block.name}(${JSON.stringify(input).slice(0, 120)})`);
+
+        // Pipe sub-agent tool events through to the client SSE stream
+        if (block.name === 'search_twitter') {
+          emit({ type: 'tool', tool: 'search_twitter', query: input.query as string });
+        } else if (block.name === 'read_page') {
+          const url = input.url as string;
+          let domain = url;
+          try { domain = new URL(url).hostname; } catch { /* keep raw */ }
+          emit({ type: 'tool', tool: 'read_page', url, domain });
+        }
+
+        let result: string;
+        if (block.name === 'search_twitter') {
+          result = await executeTwitterSearch(
+            input.query as string,
+            (input.count as number) || 20,
+            (input.sort as string) || 'Top',
+          );
+        } else if (block.name === 'read_page') {
+          result = await executeReadPage(input.url as string);
+        } else {
+          result = `Tool "${block.name}" is not available to this agent.`;
+        }
+
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: result,
+        } as Anthropic.Messages.ToolResultBlockParam);
+      }
+
+      subMessages.push({ role: 'user', content: toolResults });
+      continue;
+    }
+
+    // Unexpected stop reason — return whatever text we have
+    const fallback = response.content.find((b) => b.type === 'text');
+    return fallback?.type === 'text' ? fallback.text.trim() : 'Agent finished unexpectedly.';
+  }
+
+  return `Agent "${config.displayName}" reached its step limit without completing.`;
+}
+
 // --- Skill file loading ---
 
 function loadSkillFiles(skillsDir: string): { skillPrompt: string; htmlTemplate: string } {
@@ -390,6 +550,8 @@ export function createServer(port: number, options?: {
 }): Promise<Server> {
   const skillsDir = options?.skillsDir ?? resolve(__dirname, '..', '.claude', 'skills', 'deep-research');
   const { skillPrompt, htmlTemplate } = loadSkillFiles(skillsDir);
+
+  loadAgents();
 
   const app = express();
   app.use(express.json({ limit: '50mb' }));
@@ -626,8 +788,13 @@ export function createServer(port: number, options?: {
       systemPrompt += `\n\nAttachments available for recall:\n${attachmentList}\n\nWhen the user refers to a previously shared file or you need to analyze its contents, use the recall_attachment tool with the attachment's id to retrieve the binary content. Only call recall_attachment when you actually need to examine the file — do not recall it speculatively.`;
     }
 
-    // Build tool set: always include web tools, add note tools when linked notes exist
-    const chatTools: Anthropic.Messages.Tool[] = [...TOOLS];
+    // Build tool set: always include web tools, add note tools when linked notes exist.
+    // If a sub-agent "owns" a tool (e.g. twitter agent owns search_twitter), remove it from the
+    // main agent's list — all calls must go through run_agent so the cap is respected.
+    const agentOwnedTools = new Set(loadedAgents.flatMap((a) => a.tools));
+    const chatTools: Anthropic.Messages.Tool[] = TOOLS.filter(
+      (t) => !agentOwnedTools.has(t.name) || loadedAgents.length === 0,
+    );
     if (noteMap.size > 0) {
       chatTools.push(
         {
@@ -670,6 +837,17 @@ export function createServer(port: number, options?: {
           },
         },
       );
+    }
+
+    // Add run_agent tool when sub-agents are configured
+    if (loadedAgents.length > 0) {
+      chatTools.push(buildRunAgentTool(loadedAgents));
+      systemPrompt +=
+        `\n\nYou have access to specialized sub-agents via the run_agent tool. ` +
+        `Sub-agents conduct focused, multi-step research and return a synthesized result. ` +
+        `Use run_agent when depth and iteration are needed — for example, comprehensive Twitter/X ` +
+        `research works much better through the Twitter agent (which can run multiple targeted searches ` +
+        `and read linked pages) than a single search_twitter call.`;
     }
 
     // Add recall_attachment tool when there are attachments in the cache
@@ -837,6 +1015,10 @@ export function createServer(port: number, options?: {
               emit({ type: 'tool', tool: 'read_page', url, domain });
             } else if (block.name === 'search_twitter') {
               emit({ type: 'tool', tool: 'search_twitter', query: input.query as string });
+            } else if (block.name === 'run_agent') {
+              const agentName = input.agent as string;
+              const agentConfig = loadedAgents.find((a) => a.name === agentName);
+              emit({ type: 'tool', tool: 'run_agent', agentName: agentConfig?.displayName ?? agentName, task: input.task as string });
             } else if (block.name === 'read_note') {
               const note = noteMap.get(input.noteId as string);
               emit({ type: 'tool', tool: 'read_note', noteTitle: note?.title ?? input.noteId as string });
@@ -862,6 +1044,14 @@ export function createServer(port: number, options?: {
                 (input.count as number) || 20,
                 (input.sort as string) || 'Top',
               );
+            } else if (block.name === 'run_agent') {
+              const agentName = input.agent as string;
+              const agentConfig = loadedAgents.find((a) => a.name === agentName);
+              if (!agentConfig) {
+                result = `Error: No agent named "${agentName}" is configured.`;
+              } else {
+                result = await runSubAgent(agentConfig, input.task as string, emit);
+              }
             } else if (block.name === 'read_note') {
               const note = noteMap.get(input.noteId as string);
               if (!note) {

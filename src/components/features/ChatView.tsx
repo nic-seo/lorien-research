@@ -124,6 +124,8 @@ export default function ChatView() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toolTrace, setToolTrace] = useState<ChatToolEvent[]>([]);
+  // Ref accumulates tool events synchronously so they're readable after sendChatMessage resolves
+  const toolTraceAccRef = useRef<ChatToolEvent[]>([]);
   const [pendingEdits, setPendingEdits] = useState<(NoteEdit & { _messageIndex: number; _accepted?: boolean; _rejected?: boolean })[]>([]);
   const [savedTraces, setSavedTraces] = useState<Record<number, ChatToolEvent[]>>({});
   const [editingSectionIndex, setEditingSectionIndex] = useState<number | null>(null);
@@ -160,6 +162,18 @@ export default function ChatView() {
       }
     }
   }, [chat?._rev]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Restore saved traces from persisted message data when a chat is loaded or switched
+  useEffect(() => {
+    if (!chat) return;
+    const restored: Record<number, ChatToolEvent[]> = {};
+    chat.messages.forEach((msg, i) => {
+      if (msg.toolTrace && msg.toolTrace.length > 0) {
+        restored[i] = msg.toolTrace as ChatToolEvent[];
+      }
+    });
+    setSavedTraces(restored);
+  }, [chat?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTitleInput = (e: React.FormEvent<HTMLDivElement>) => {
     titleRef.current = e.currentTarget.textContent || '';
@@ -305,6 +319,7 @@ export default function ChatView() {
     setError(null);
     setSending(true);
     setToolTrace([]);
+    toolTraceAccRef.current = [];
 
     // Persist user message
     try {
@@ -399,15 +414,25 @@ export default function ChatView() {
         apiMessages,
         projectContext,
         chat.summary,
-        (event) => setToolTrace((prev) => [...prev, event]),
+        (event) => {
+          toolTraceAccRef.current = [...toolTraceAccRef.current, event];
+          setToolTrace((prev) => [...prev, event]);
+        },
         linkedNotes,
         Object.keys(attachmentCache).length > 0 ? attachmentCache : undefined,
       );
+
+      // Capture the trace synchronously from the ref (state may not have flushed yet)
+      const traceSnapshot = toolTraceAccRef.current.length > 0
+        ? [...toolTraceAccRef.current]
+        : undefined;
+      toolTraceAccRef.current = [];
 
       const assistantMessage: ChatMessage = {
         role: 'assistant',
         content: response.content,
         timestamp: new Date().toISOString(),
+        ...(traceSnapshot ? { toolTrace: traceSnapshot } : {}),
       };
 
       // If the server compressed some messages into a new summary, persist the
@@ -423,7 +448,7 @@ export default function ChatView() {
 
       await updateDoc<Chat>(chatId, docUpdates);
 
-      // Save tool trace and proposed edits, anchored to this assistant message
+      // Update in-memory trace index and clear the live trace
       const msgIndex = updatedMessages.length; // index of the assistant message just added
       if (response.pendingEdits && response.pendingEdits.length > 0) {
         setPendingEdits((prev) => [
@@ -431,13 +456,10 @@ export default function ChatView() {
           ...response.pendingEdits!.map((e) => ({ ...e, _messageIndex: msgIndex })),
         ]);
       }
-      // Persist trace for this message so it survives after sending ends
-      setToolTrace((trace) => {
-        if (trace.length > 0) {
-          setSavedTraces((prev) => ({ ...prev, [msgIndex]: trace }));
-        }
-        return [];
-      });
+      if (traceSnapshot) {
+        setSavedTraces((prev) => ({ ...prev, [msgIndex]: traceSnapshot }));
+      }
+      setToolTrace([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get response.');
     } finally {
@@ -558,16 +580,19 @@ export default function ChatView() {
             </summary>
             <div className="chat-trace">
               {trace.map((event, j) => (
-                <div key={j} className="chat-trace-item">
+                <div key={j} className={`chat-trace-item${event.tool === 'run_agent' ? ' chat-trace-item-agent' : ''}`}>
                   <span className="chat-trace-icon">
                     {event.tool === 'web_search' ? '⌕' :
                      event.tool === 'search_twitter' ? '𝕏' :
+                     event.tool === 'run_agent' ? '⬡' :
                      event.tool === 'read_note' ? '📖' :
                      event.tool === 'edit_note' ? '✏️' :
                      event.tool === 'recall_attachment' ? '📎' : '↗'}
                   </span>
                   <span className="chat-trace-label">
-                    {event.tool === 'web_search' || event.tool === 'search_twitter'
+                    {event.tool === 'run_agent'
+                      ? `${event.agentName}${event.task ? ` — ${event.task.slice(0, 60)}${event.task.length > 60 ? '…' : ''}` : ''}`
+                      : event.tool === 'web_search' || event.tool === 'search_twitter'
                       ? event.query
                       : event.tool === 'read_note' || event.tool === 'edit_note'
                       ? event.noteTitle
@@ -755,16 +780,19 @@ export default function ChatView() {
               {toolTrace.length > 0 && (
                 <div className="chat-trace">
                   {toolTrace.map((event, i) => (
-                    <div key={i} className="chat-trace-item">
+                    <div key={i} className={`chat-trace-item${event.tool === 'run_agent' ? ' chat-trace-item-agent' : ''}`}>
                       <span className="chat-trace-icon">
                         {event.tool === 'web_search' ? '⌕' :
                          event.tool === 'search_twitter' ? '𝕏' :
+                         event.tool === 'run_agent' ? '⬡' :
                          event.tool === 'read_note' ? '📖' :
                          event.tool === 'edit_note' ? '✏️' :
                          event.tool === 'recall_attachment' ? '📎' : '↗'}
                       </span>
                       <span className="chat-trace-label">
-                        {event.tool === 'web_search' || event.tool === 'search_twitter'
+                        {event.tool === 'run_agent'
+                          ? `${event.agentName}${event.task ? ` — ${event.task.slice(0, 60)}${event.task.length > 60 ? '…' : ''}` : ''}`
+                          : event.tool === 'web_search' || event.tool === 'search_twitter'
                           ? event.query
                           : event.tool === 'read_note' || event.tool === 'edit_note'
                           ? event.noteTitle

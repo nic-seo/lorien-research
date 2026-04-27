@@ -41,11 +41,25 @@ export interface Note extends BaseDoc {
   topicIds?: string[];
 }
 
+/** A single tool call recorded in a chat message trace. */
+export interface ToolTraceEvent {
+  tool: string;
+  query?: string;
+  url?: string;
+  domain?: string;
+  noteTitle?: string;
+  attachmentName?: string;
+  agentName?: string;
+  task?: string;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'section';
   content: string;
   timestamp: string;
   attachmentIds?: string[];
+  /** Tool calls made while generating this message (assistant messages only). */
+  toolTrace?: ToolTraceEvent[];
 }
 
 export interface ChatAttachment extends BaseDoc {
