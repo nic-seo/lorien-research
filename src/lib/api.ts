@@ -111,8 +111,8 @@ export interface SendChatResult {
 
 export interface ChatToolEvent {
   type: 'tool';
-  tool: 'web_search' | 'read_page' | 'read_note' | 'edit_note' | 'recall_attachment';
-  /** Populated when tool === 'web_search' */
+  tool: 'web_search' | 'read_page' | 'read_note' | 'edit_note' | 'recall_attachment' | 'search_twitter';
+  /** Populated when tool === 'web_search' or 'search_twitter' */
   query?: string;
   /** Populated when tool === 'read_page' */
   url?: string;

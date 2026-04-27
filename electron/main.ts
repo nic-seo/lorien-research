@@ -49,11 +49,12 @@ async function createWindow() {
   // Read stored keys
   const anthropicKey = getKey('anthropic-api-key') || '';
   const braveKey = getKey('brave-search-api-key') || '';
+  const apifyKey = getKey('apify-api-token') || '';
 
   // Start the embedded Express server
   if (!isDev) {
     try {
-      serverPort = await startServer({ anthropicKey, braveKey });
+      serverPort = await startServer({ anthropicKey, braveKey, apifyKey });
       console.log(`[electron] Server started on port ${serverPort}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message + '\n' + err.stack : String(err);
@@ -128,21 +129,27 @@ ipcMain.handle('get-api-keys', () => {
   return {
     anthropicKey: getKey('anthropic-api-key') || '',
     braveKey: getKey('brave-search-api-key') || '',
+    apifyKey: getKey('apify-api-token') || '',
   };
 });
 
-ipcMain.handle('set-api-keys', async (_event, keys: { anthropicKey: string; braveKey?: string }) => {
+ipcMain.handle('set-api-keys', async (_event, keys: { anthropicKey: string; braveKey?: string; apifyKey?: string }) => {
   if (keys.anthropicKey) {
     setKey('anthropic-api-key', keys.anthropicKey);
   }
   if (keys.braveKey) {
     setKey('brave-search-api-key', keys.braveKey);
   }
+  if (keys.apifyKey !== undefined) {
+    // Allow clearing by passing empty string
+    if (keys.apifyKey) setKey('apify-api-token', keys.apifyKey);
+  }
 
   // Hot-reload keys in the running server
   await updateServerKeys(
     keys.anthropicKey || getKey('anthropic-api-key') || '',
-    keys.braveKey || getKey('brave-search-api-key') || ''
+    keys.braveKey || getKey('brave-search-api-key') || '',
+    keys.apifyKey !== undefined ? keys.apifyKey : getKey('apify-api-token') || '',
   );
 });
 

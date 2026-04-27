@@ -5,10 +5,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
 
   // API key management
-  getApiKeys: (): Promise<{ anthropicKey: string; braveKey: string }> =>
+  getApiKeys: (): Promise<{ anthropicKey: string; braveKey: string; apifyKey: string }> =>
     ipcRenderer.invoke('get-api-keys'),
 
-  setApiKeys: (keys: { anthropicKey: string; braveKey?: string }): Promise<void> =>
+  setApiKeys: (keys: { anthropicKey: string; braveKey?: string; apifyKey?: string }): Promise<void> =>
     ipcRenderer.invoke('set-api-keys', keys),
 
   hasApiKeys: (): Promise<boolean> =>

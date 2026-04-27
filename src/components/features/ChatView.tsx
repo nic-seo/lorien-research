@@ -27,14 +27,19 @@ marked.setOptions({ breaks: true });
 
 // ---- Chat TOC ----
 
-interface ChatSection { timestamp: string; content: string; }
+interface ChatSection { timestamp: string; content: string; msgIndex: number; }
 
-function ChatTOC({ messages }: { messages: ChatMessage[] }) {
+function ChatTOC({ messages, forkBoundary = 0 }: { messages: ChatMessage[]; forkBoundary?: number }) {
   const [activeTs, setActiveTs] = useState('');
+  const [inheritedExpanded, setInheritedExpanded] = useState(false);
 
   const sections: ChatSection[] = messages
-    .filter((m): m is ChatMessage & { role: 'section' } => m.role === 'section' && !!m.content.trim())
-    .map((m) => ({ timestamp: m.timestamp, content: m.content.trim() }));
+    .map((m, i) => ({ m, i }))
+    .filter(({ m }) => m.role === 'section' && !!m.content.trim())
+    .map(({ m, i }) => ({ timestamp: m.timestamp, content: m.content.trim(), msgIndex: i }));
+
+  const inheritedSections = forkBoundary > 0 ? sections.filter((s) => s.msgIndex < forkBoundary) : [];
+  const newSections = forkBoundary > 0 ? sections.filter((s) => s.msgIndex >= forkBoundary) : sections;
 
   useEffect(() => {
     if (sections.length === 0) return;
@@ -57,21 +62,46 @@ function ChatTOC({ messages }: { messages: ChatMessage[] }) {
     if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); setActiveTs(s.timestamp); }
   };
 
-  if (sections.length === 0) return null;
+  if (sections.length === 0 && inheritedSections.length === 0) return null;
+
+  const tocLink = (s: ChatSection) => (
+    <button
+      key={s.timestamp}
+      className={`chat-toc-link${activeTs === s.timestamp ? ' active' : ''}`}
+      onClick={() => handleClick(s)}
+    >
+      {s.content}
+    </button>
+  );
 
   return (
     <nav className="chat-toc">
       <div className="chat-toc-inner">
         <div className="chat-toc-label">Contents</div>
-        {sections.map((s) => (
-          <button
-            key={s.timestamp}
-            className={`chat-toc-link${activeTs === s.timestamp ? ' active' : ''}`}
-            onClick={() => handleClick(s)}
-          >
-            {s.content}
-          </button>
-        ))}
+
+        {/* Inherited sections (forked chats only) */}
+        {inheritedSections.length > 0 && (
+          <>
+            {inheritedExpanded && (
+              <div className="chat-toc-inherited">
+                {inheritedSections.map(tocLink)}
+              </div>
+            )}
+            <div className="chat-toc-fork-divider">
+              <button
+                className={`chat-toc-fork-toggle${inheritedExpanded ? ' expanded' : ''}`}
+                onClick={() => setInheritedExpanded((v) => !v)}
+                title={inheritedExpanded ? 'Hide inherited sections' : 'Show inherited sections'}
+              >
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="fork-history-chevron">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+            </div>
+          </>
+        )}
+
+        {newSections.map(tocLink)}
       </div>
     </nav>
   );
@@ -97,6 +127,13 @@ export default function ChatView() {
   const [pendingEdits, setPendingEdits] = useState<(NoteEdit & { _messageIndex: number; _accepted?: boolean; _rejected?: boolean })[]>([]);
   const [savedTraces, setSavedTraces] = useState<Record<number, ChatToolEvent[]>>({});
   const [editingSectionIndex, setEditingSectionIndex] = useState<number | null>(null);
+  const [forkHistoryExpanded, setForkHistoryExpanded] = useState(false);
+
+  // Index of the first message that belongs to THIS fork (not inherited).
+  // forkedAtIndex is the last inherited message (inclusive), so boundary = forkedAtIndex + 1.
+  const forkBoundary = chat?.forkedFromId != null && chat?.forkedAtIndex != null
+    ? chat.forkedAtIndex + 1
+    : 0;
 
   // File attachments
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -478,6 +515,148 @@ export default function ChatView() {
 
   if (!chat) return <div className="page-loading">Loading…</div>;
 
+  // ---- Message renderer (used for both inherited history and new messages) ----
+  const renderMessage = (msg: ChatMessage, i: number): React.ReactNode => {
+    // ---- Section header ----
+    if (msg.role === 'section') {
+      return (
+        <div key={msg.timestamp} className="chat-section-wrap" data-section-ts={msg.timestamp}>
+          <div
+            className="chat-section-header"
+            contentEditable
+            suppressContentEditableWarning
+            data-placeholder="Untitled section"
+            ref={(el) => { if (el && editingSectionIndex === i) { el.focus(); } }}
+            onBlur={(e) => saveSection(i, e.currentTarget.textContent || '')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); }
+              if (e.key === 'Escape') { (e.target as HTMLElement).blur(); }
+            }}
+            onPaste={(e) => {
+              e.preventDefault();
+              document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+            }}
+          >
+            {msg.content}
+          </div>
+        </div>
+      );
+    }
+
+    // ---- Normal message ----
+    const editsForMessage = pendingEdits
+      .map((e, idx) => ({ ...e, _globalIndex: idx }))
+      .filter((e) => e._messageIndex === i && !e._rejected);
+    const trace = savedTraces[i];
+
+    return (
+      <div key={i} className={`chat-message-wrap ${msg.role === 'user' ? 'chat-message-wrap-user' : ''}`}>
+        {trace && trace.length > 0 && (
+          <details className="chat-trace-toggle">
+            <summary className="chat-trace-summary">
+              {trace.length} tool {trace.length === 1 ? 'call' : 'calls'}
+            </summary>
+            <div className="chat-trace">
+              {trace.map((event, j) => (
+                <div key={j} className="chat-trace-item">
+                  <span className="chat-trace-icon">
+                    {event.tool === 'web_search' ? '⌕' :
+                     event.tool === 'search_twitter' ? '𝕏' :
+                     event.tool === 'read_note' ? '📖' :
+                     event.tool === 'edit_note' ? '✏️' :
+                     event.tool === 'recall_attachment' ? '📎' : '↗'}
+                  </span>
+                  <span className="chat-trace-label">
+                    {event.tool === 'web_search' || event.tool === 'search_twitter'
+                      ? event.query
+                      : event.tool === 'read_note' || event.tool === 'edit_note'
+                      ? event.noteTitle
+                      : event.tool === 'recall_attachment'
+                      ? event.attachmentName
+                      : event.domain ?? event.url}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+        <div
+          className={`chat-message ${msg.role === 'user' ? 'chat-message-user' : 'chat-message-assistant'}`}
+        >
+          {msg.attachmentIds && msg.attachmentIds.length > 0 && (
+            <div className="chat-message-attachments">
+              {msg.attachmentIds.map((id) => {
+                const entry = attachmentUrls.get(id);
+                if (!entry) return <span key={id} className="chat-message-attachment-pdf">Loading…</span>;
+                return entry.mimeType.startsWith('image/') ? (
+                  <a key={id} href={entry.url} target="_blank" rel="noreferrer">
+                    <img className="chat-message-attachment-img" src={entry.url} alt="attachment" />
+                  </a>
+                ) : (
+                  <a key={id} className="chat-message-attachment-pdf" href={entry.url} target="_blank" rel="noreferrer">
+                    📄 PDF attachment
+                  </a>
+                );
+              })}
+            </div>
+          )}
+          {msg.role === 'assistant' ? (
+            <div
+              className="chat-message-content chat-message-md"
+              dangerouslySetInnerHTML={{ __html: marked(msg.content) as string }}
+            />
+          ) : (
+            msg.content && <div className="chat-message-content">{msg.content}</div>
+          )}
+        </div>
+        <div className="chat-msg-actions">
+          <button
+            className="chat-action-btn"
+            onClick={() => insertSection(i)}
+            title="Add section below"
+          >#</button>
+        </div>
+
+        {editsForMessage.length > 0 && (
+          <div className="chat-edit-proposals">
+            {editsForMessage.map((edit) => (
+              <div key={edit._globalIndex} className={`chat-edit-proposal ${edit._accepted ? 'chat-edit-accepted' : ''}`}>
+                <div className="chat-edit-header">
+                  <span className="chat-edit-icon">✏️</span>
+                  <span className="chat-edit-title">{edit.noteTitle}</span>
+                  {edit._accepted && <span className="chat-edit-badge">Applied</span>}
+                </div>
+                {!edit._accepted && (
+                  <>
+                    <div className="chat-edit-diff">
+                      <div className="chat-edit-old">{edit.oldText}</div>
+                      <div className="chat-edit-arrow">→</div>
+                      <div className="chat-edit-new">{edit.newText}</div>
+                    </div>
+                    <div className="chat-edit-actions">
+                      <button
+                        className="chat-edit-accept"
+                        onClick={() => handleAcceptEdit(edit._globalIndex)}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        className="chat-edit-reject"
+                        onClick={() => handleRejectEdit(edit._globalIndex)}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="chat-page">
       <DocHeader
@@ -530,151 +709,41 @@ export default function ChatView() {
 
       <div className="chat-body">
         <div className="chat-toc-trigger" />
-        <ChatTOC messages={chat.messages} />
+        <ChatTOC messages={chat.messages} forkBoundary={forkBoundary} />
       <div className="chat-messages" ref={messagesRef}>
           {chat.messages.length === 0 && !sending && (
             <div className="chat-empty">Start a conversation…</div>
           )}
 
-          {chat.messages.map((msg, i) => {
-            // ---- Section header ----
-            if (msg.role === 'section') {
-              return (
-                <div key={msg.timestamp} className="chat-section-wrap" data-section-ts={msg.timestamp}>
-                  <div
-                    className="chat-section-header"
-                    contentEditable
-                    suppressContentEditableWarning
-                    data-placeholder="Untitled section"
-                    ref={(el) => { if (el && editingSectionIndex === i) { el.focus(); } }}
-                    onBlur={(e) => saveSection(i, e.currentTarget.textContent || '')}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); }
-                      if (e.key === 'Escape') { (e.target as HTMLElement).blur(); }
-                    }}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
-                    }}
-                  >
-                    {msg.content}
-                  </div>
+          {/* Collapsible inherited history for forked chats */}
+          {forkBoundary > 0 && (
+            <>
+              {forkHistoryExpanded && (
+                <div className="fork-history-block">
+                  {chat.messages.slice(0, forkBoundary).map((msg, i) => renderMessage(msg, i))}
                 </div>
-              );
-            }
+              )}
 
-            // ---- Normal message ----
-            const editsForMessage = pendingEdits
-              .map((e, idx) => ({ ...e, _globalIndex: idx }))
-              .filter((e) => e._messageIndex === i && !e._rejected);
-            const trace = savedTraces[i];
-
-            return (
-              <div key={i} className={`chat-message-wrap ${msg.role === 'user' ? 'chat-message-wrap-user' : ''}`}>
-                {trace && trace.length > 0 && (
-                  <details className="chat-trace-toggle">
-                    <summary className="chat-trace-summary">
-                      {trace.length} tool {trace.length === 1 ? 'call' : 'calls'}
-                    </summary>
-                    <div className="chat-trace">
-                      {trace.map((event, j) => (
-                        <div key={j} className="chat-trace-item">
-                          <span className="chat-trace-icon">
-                            {event.tool === 'web_search' ? '⌕' :
-                             event.tool === 'read_note' ? '📖' :
-                             event.tool === 'edit_note' ? '✏️' :
-                             event.tool === 'recall_attachment' ? '📎' : '↗'}
-                          </span>
-                          <span className="chat-trace-label">
-                            {event.tool === 'web_search'
-                              ? event.query
-                              : event.tool === 'read_note' || event.tool === 'edit_note'
-                              ? event.noteTitle
-                              : event.tool === 'recall_attachment'
-                              ? event.attachmentName
-                              : event.domain ?? event.url}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
-                <div
-                  className={`chat-message ${msg.role === 'user' ? 'chat-message-user' : 'chat-message-assistant'}`}
+              {/* Divider always visible at the fork point */}
+              <div className="fork-history-divider">
+                <button
+                  className={`fork-history-toggle${forkHistoryExpanded ? ' expanded' : ''}`}
+                  onClick={() => setForkHistoryExpanded(v => !v)}
                 >
-                  {msg.attachmentIds && msg.attachmentIds.length > 0 && (
-                    <div className="chat-message-attachments">
-                      {msg.attachmentIds.map((id) => {
-                        const entry = attachmentUrls.get(id);
-                        if (!entry) return <span key={id} className="chat-message-attachment-pdf">Loading…</span>;
-                        return entry.mimeType.startsWith('image/') ? (
-                          <a key={id} href={entry.url} target="_blank" rel="noreferrer">
-                            <img className="chat-message-attachment-img" src={entry.url} alt="attachment" />
-                          </a>
-                        ) : (
-                          <a key={id} className="chat-message-attachment-pdf" href={entry.url} target="_blank" rel="noreferrer">
-                            📄 PDF attachment
-                          </a>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {msg.role === 'assistant' ? (
-                    <div
-                      className="chat-message-content chat-message-md"
-                      dangerouslySetInnerHTML={{ __html: marked(msg.content) as string }}
-                    />
-                  ) : (
-                    msg.content && <div className="chat-message-content">{msg.content}</div>
-                  )}
-                </div>
-                <div className="chat-msg-actions">
-                  <button
-                    className="chat-action-btn"
-                    onClick={() => insertSection(i)}
-                    title="Add section below"
-                  >#</button>
-                </div>
-
-                {editsForMessage.length > 0 && (
-                  <div className="chat-edit-proposals">
-                    {editsForMessage.map((edit) => (
-                      <div key={edit._globalIndex} className={`chat-edit-proposal ${edit._accepted ? 'chat-edit-accepted' : ''}`}>
-                        <div className="chat-edit-header">
-                          <span className="chat-edit-icon">✏️</span>
-                          <span className="chat-edit-title">{edit.noteTitle}</span>
-                          {edit._accepted && <span className="chat-edit-badge">Applied</span>}
-                        </div>
-                        {!edit._accepted && (
-                          <>
-                            <div className="chat-edit-diff">
-                              <div className="chat-edit-old">{edit.oldText}</div>
-                              <div className="chat-edit-arrow">→</div>
-                              <div className="chat-edit-new">{edit.newText}</div>
-                            </div>
-                            <div className="chat-edit-actions">
-                              <button
-                                className="chat-edit-accept"
-                                onClick={() => handleAcceptEdit(edit._globalIndex)}
-                              >
-                                Accept
-                              </button>
-                              <button
-                                className="chat-edit-reject"
-                                onClick={() => handleRejectEdit(edit._globalIndex)}
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="fork-history-chevron">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                  {forkHistoryExpanded ? 'Hide' : 'Show'} {forkBoundary} inherited {forkBoundary === 1 ? 'message' : 'messages'}
+                </button>
               </div>
-            );
+            </>
+          )}
+
+          {chat.messages.slice(forkBoundary).map((msg, relIdx) => {
+            const i = forkBoundary + relIdx;
+            return renderMessage(msg, i);
           })}
+
 
           {sending && (
             <div className="chat-message chat-message-assistant">
@@ -689,12 +758,13 @@ export default function ChatView() {
                     <div key={i} className="chat-trace-item">
                       <span className="chat-trace-icon">
                         {event.tool === 'web_search' ? '⌕' :
+                         event.tool === 'search_twitter' ? '𝕏' :
                          event.tool === 'read_note' ? '📖' :
                          event.tool === 'edit_note' ? '✏️' :
                          event.tool === 'recall_attachment' ? '📎' : '↗'}
                       </span>
                       <span className="chat-trace-label">
-                        {event.tool === 'web_search'
+                        {event.tool === 'web_search' || event.tool === 'search_twitter'
                           ? event.query
                           : event.tool === 'read_note' || event.tool === 'edit_note'
                           ? event.noteTitle

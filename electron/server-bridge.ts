@@ -35,6 +35,7 @@ async function getPort(): Promise<number> {
 export async function startServer(config: {
   anthropicKey: string;
   braveKey: string;
+  apifyKey?: string;
 }): Promise<number> {
   const port = await getPort();
 
@@ -47,14 +48,14 @@ export async function startServer(config: {
     ? path.join(process.resourcesPath, 'skills')
     : path.join(app.getAppPath(), '.claude', 'skills', 'deep-research');
 
-  updateKeys(config.anthropicKey, config.braveKey);
+  updateKeys(config.anthropicKey, config.braveKey, config.apifyKey);
   server = await createServer(port, { staticDir, skillsDir });
 
   return port;
 }
 
-export async function updateServerKeys(anthropicKey: string, braveKey?: string): Promise<void> {
-  updateKeys(anthropicKey, braveKey);
+export async function updateServerKeys(anthropicKey: string, braveKey?: string, apifyKey?: string): Promise<void> {
+  updateKeys(anthropicKey, braveKey, apifyKey);
 }
 
 export function stopServer(): void {

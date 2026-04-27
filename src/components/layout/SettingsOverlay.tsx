@@ -8,8 +8,10 @@ interface SettingsOverlayProps {
 export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
   const [anthropicKey, setAnthropicKey] = useState('');
   const [braveKey, setBraveKey] = useState('');
+  const [apifyKey, setApifyKey] = useState('');
   const [showAnthropic, setShowAnthropic] = useState(false);
   const [showBrave, setShowBrave] = useState(false);
+  const [showApify, setShowApify] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +27,7 @@ export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
     window.electronAPI?.getApiKeys().then(keys => {
       setAnthropicKey(keys.anthropicKey || '');
       setBraveKey(keys.braveKey || '');
+      setApifyKey(keys.apifyKey || '');
     });
     window.electronAPI?.getAppVersion().then(v => setAppVersion(v || ''));
     inputRef.current?.focus();
@@ -58,6 +61,7 @@ export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
       await window.electronAPI?.setApiKeys({
         anthropicKey: anthropicKey.trim(),
         braveKey: braveKey.trim() || undefined,
+        apifyKey: apifyKey.trim() || undefined,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -129,6 +133,33 @@ export default function SettingsOverlay({ onClose }: SettingsOverlayProps) {
             </div>
             <p className="settings-hint">
               Enables web search in reports. Get one at <span className="settings-link">brave.com/search/api</span>
+            </p>
+          </div>
+
+          <div className="settings-field">
+            <label className="settings-label">
+              Apify API Token
+              <span className="settings-optional">optional</span>
+            </label>
+            <div className="settings-input-row">
+              <input
+                type={showApify ? 'text' : 'password'}
+                className="settings-input"
+                value={apifyKey}
+                onChange={e => setApifyKey(e.target.value)}
+                placeholder="apify_api_..."
+                onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
+              />
+              <button
+                className="settings-toggle-vis"
+                onClick={() => setShowApify(v => !v)}
+                title={showApify ? 'Hide' : 'Show'}
+              >
+                {showApify ? '◠' : '◡'}
+              </button>
+            </div>
+            <p className="settings-hint">
+              Enables Twitter/X search in chats and reports. Get one at <span className="settings-link">apify.com</span>
             </p>
           </div>
 

@@ -15,16 +15,18 @@ const __dirname = typeof import.meta?.url === 'string' && import.meta.url.starts
 
 let anthropic: Anthropic | null = null;
 let braveApiKey: string | null = null;
+let apifyApiKey: string | null = null;
 
 /**
  * Update API keys at runtime. Called by Electron main process via IPC,
  * or at startup in standalone mode.
  */
-export function updateKeys(anthropicKey: string, brave?: string): void {
+export function updateKeys(anthropicKey: string, brave?: string, apify?: string): void {
   if (anthropicKey) {
     anthropic = new Anthropic({ apiKey: anthropicKey });
   }
   braveApiKey = brave || null;
+  apifyApiKey = apify || null;
 }
 
 // --- Web search tools ---
@@ -128,6 +130,113 @@ async function executeReadPage(url: string): Promise<string> {
   }
 }
 
+// --- Twitter/X search via Apify ---
+
+interface ApifyTweet {
+  id?: string;
+  text?: string;
+  full_text?: string;
+  author?: { userName?: string; name?: string; followers?: number };
+  user?: { screen_name?: string; name?: string; followers_count?: number };
+  createdAt?: string;
+  created_at?: string;
+  likeCount?: number;
+  favorite_count?: number;
+  retweetCount?: number;
+  retweet_count?: number;
+  viewCount?: number;
+  url?: string;
+  id_str?: string;
+}
+
+async function executeTwitterSearch(query: string, count: number = 20, sort: string = 'Top'): Promise<string> {
+  if (!apifyApiKey) {
+    return 'Error: APIFY_API_TOKEN not configured. Cannot search Twitter/X.';
+  }
+
+  // scrape.badger~twitter-tweets-scraper: high success rate (99.5%), most popular Twitter scraper on Apify
+  const actorId = 'scrape.badger~twitter-tweets-scraper';
+  const url = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items` +
+    `?token=${apifyApiKey}&timeout=60&memory=512`;
+
+  // Map sort values to this actor's query_type field
+  const queryType = sort === 'Latest' ? 'Latest' : 'Top';
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'Advanced Search',
+        query,
+        query_type: queryType,
+        max_results: Math.min(Math.max(count, 1), 50),
+      }),
+      signal: AbortSignal.timeout(65_000),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      console.error(`[twitter] HTTP ${response.status} ${response.statusText}: ${body.slice(0, 500)}`);
+      return `Twitter search error: ${response.status} ${response.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`;
+    }
+
+    const rawBody = await response.text();
+    console.log(`[twitter] raw response (first 1000 chars): ${rawBody.slice(0, 1000)}`);
+
+    let tweets: Record<string, unknown>[];
+    try {
+      tweets = JSON.parse(rawBody) as Record<string, unknown>[];
+    } catch {
+      return `Twitter search error: could not parse response — ${rawBody.slice(0, 200)}`;
+    }
+
+    if (!Array.isArray(tweets) || tweets.length === 0) {
+      return 'No tweets found for this query.';
+    }
+
+    // Log first tweet keys so we can verify field names on first use
+    console.log(`[twitter] first tweet keys: ${Object.keys(tweets[0]).join(', ')}`);
+    console.log(`[twitter] first tweet sample: ${JSON.stringify(tweets[0]).slice(0, 500)}`);
+
+    // Filter out any noResults sentinel objects
+    const realTweets = tweets.filter((t) => !t.noResults);
+    if (realTweets.length === 0) {
+      return 'No tweets found for this query. The account may be private, the username may be incorrect, or no recent tweets match the search terms.';
+    }
+
+    return realTweets.map((t, i) => {
+      const raw = t;
+      // Field names vary by actor — try all known variants
+      const author = (raw.author ?? raw.user ?? {}) as Record<string, unknown>;
+      const handle = (raw.screen_name ?? author.screen_name ?? author.userName ?? author.username ?? 'unknown') as string;
+      const name   = (raw.name ?? author.name ?? handle) as string;
+      const text   = ((raw.text ?? raw.full_text ?? raw.tweet_text ?? '') as string).trim();
+      const likes  = (raw.like_count ?? raw.likeCount ?? raw.favorite_count ?? raw.favouriteCount ?? 0) as number;
+      const rts    = (raw.retweet_count ?? raw.retweetCount ?? 0) as number;
+      const views  = (raw.views ?? raw.view_count ?? raw.viewCount ?? raw.impression_count ?? 0) as number;
+      const date   = (raw.created_at ?? raw.createdAt ?? raw.timestamp ?? '') as string;
+      const dateStr = date ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      const tweetId = (raw.id ?? raw.id_str ?? raw.tweet_id ?? '') as string;
+      const tweetUrl = (raw.url ?? raw.tweet_url ?? (tweetId ? `https://x.com/${handle}/status/${tweetId}` : '')) as string;
+
+      const meta = [
+        dateStr,
+        likes  ? `${(likes as number).toLocaleString()} likes` : '',
+        rts    ? `${(rts as number).toLocaleString()} RTs` : '',
+        views  ? `${((views as number) / 1000).toFixed(0)}K views` : '',
+      ].filter(Boolean).join(' · ');
+
+      return `[${i + 1}] @${handle} (${name})${meta ? ' · ' + meta : ''}\n    ${text}${tweetUrl ? '\n    ' + tweetUrl : ''}`;
+    }).join('\n\n');
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return 'Twitter search timed out after 60s.';
+    }
+    return `Twitter search error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+  }
+}
+
 const TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: 'web_search',
@@ -163,6 +272,35 @@ const TOOLS: Anthropic.Messages.Tool[] = [
         },
       },
       required: ['url'],
+    },
+  },
+  {
+    name: 'search_twitter',
+    description:
+      'Search Twitter/X for recent tweets. Best for: breaking AI news and announcements, researcher and developer takes, ' +
+      'community reactions, posts from specific accounts (prefix with "from:username"), and real-time discourse. ' +
+      'Prefer web_search for polished articles and documentation; use this for raw, up-to-the-minute social signals. ' +
+      'Sort "Latest" for recency, "Top" for engagement.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Twitter search query. Supports operators: "from:username" (tweets by a user), ' +
+            '"filter:links" (tweets with URLs), "-word" (exclude term), exact phrases in quotes.',
+        },
+        count: {
+          type: 'number',
+          description: 'Number of tweets to return (1–50, default 20).',
+        },
+        sort: {
+          type: 'string',
+          enum: ['Top', 'Latest', 'Latest + Top'],
+          description: '"Top" for most-engaged results (default, most reliable), "Latest" for newest first, "Latest + Top" for a mix.',
+        },
+      },
+      required: ['query'],
     },
   },
 ];
@@ -312,6 +450,12 @@ export function createServer(port: number, options?: {
               );
             } else if (block.name === 'read_page') {
               result = await executeReadPage(input.url as string);
+            } else if (block.name === 'search_twitter') {
+              result = await executeTwitterSearch(
+                input.query as string,
+                (input.count as number) || 20,
+                (input.sort as string) || 'Top',
+              );
             } else {
               result = `Unknown tool: ${block.name}`;
             }
@@ -675,6 +819,8 @@ export function createServer(port: number, options?: {
               let domain = url;
               try { domain = new URL(url).hostname; } catch { /* keep raw url */ }
               emit({ type: 'tool', tool: 'read_page', url, domain });
+            } else if (block.name === 'search_twitter') {
+              emit({ type: 'tool', tool: 'search_twitter', query: input.query as string });
             } else if (block.name === 'read_note') {
               const note = noteMap.get(input.noteId as string);
               emit({ type: 'tool', tool: 'read_note', noteTitle: note?.title ?? input.noteId as string });
@@ -694,6 +840,12 @@ export function createServer(port: number, options?: {
               );
             } else if (block.name === 'read_page') {
               result = await executeReadPage(input.url as string);
+            } else if (block.name === 'search_twitter') {
+              result = await executeTwitterSearch(
+                input.query as string,
+                (input.count as number) || 20,
+                (input.sort as string) || 'Top',
+              );
             } else if (block.name === 'read_note') {
               const note = noteMap.get(input.noteId as string);
               if (!note) {
@@ -949,13 +1101,21 @@ if (isDirectExecution) {
     process.exit(1);
   }
 
-  updateKeys(API_KEY, process.env.BRAVE_SEARCH_API_KEY);
+  updateKeys(API_KEY, process.env.BRAVE_SEARCH_API_KEY, process.env.APIFY_API_TOKEN);
 
   if (!process.env.BRAVE_SEARCH_API_KEY) {
     console.warn(
       '\n  Warning: BRAVE_SEARCH_API_KEY not set.\n' +
       '  Reports will be generated without web search.\n' +
       '  Get a key at https://brave.com/search/api/\n'
+    );
+  }
+
+  if (!process.env.APIFY_API_TOKEN) {
+    console.warn(
+      '\n  Warning: APIFY_API_TOKEN not set.\n' +
+      '  Twitter/X search will not be available.\n' +
+      '  Get a token at https://apify.com\n'
     );
   }
 

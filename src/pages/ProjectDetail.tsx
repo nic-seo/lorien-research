@@ -1,5 +1,5 @@
 import { useParams, useSearchParams } from 'react-router-dom';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDoc, useProjectDocs } from '../db/hooks';
 import { createDoc, deleteDoc, deleteReport, updateDoc } from '../db';
 import type { Project, Report, Note, Chat, Reference, Topic } from '../db/types';
@@ -311,6 +311,82 @@ function HomeTab({
   );
 }
 
+// --- Shared sortable doc list ---
+
+type SortKey = 'createdAt' | 'updatedAt';
+type SortDir = 'asc' | 'desc';
+
+interface DocListEntry {
+  _id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  onClick: (e: React.MouseEvent) => void;
+  onDelete?: () => void;
+  projectId: string;
+}
+
+function DocList({ items, formatDate }: { items: DocListEntry[]; formatDate: (iso: string) => string }) {
+  const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+  };
+
+  const sorted = useMemo(() => [...items].sort((a, b) => {
+    const cmp = a[sortKey].localeCompare(b[sortKey]);
+    return sortDir === 'desc' ? -cmp : cmp;
+  }), [items, sortKey, sortDir]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="doc-list">
+      <div className="doc-list-header">
+        <span className="doc-list-header-title">Title</span>
+        <button
+          className={`doc-list-sort-btn${sortKey === 'createdAt' ? ' active' : ''}`}
+          onClick={() => toggleSort('createdAt')}
+        >
+          Created {sortKey === 'createdAt' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+        </button>
+        <button
+          className={`doc-list-sort-btn${sortKey === 'updatedAt' ? ' active' : ''}`}
+          onClick={() => toggleSort('updatedAt')}
+        >
+          Updated {sortKey === 'updatedAt' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+        </button>
+      </div>
+      {sorted.map(item => (
+        <div key={item._id} className="list-item-row">
+          <div className="doc-list-item" onClick={item.onClick}>
+            <span className="doc-list-item-title">{item.title}</span>
+            <div className="doc-list-item-dates">
+              <span className={`doc-list-item-date${sortKey === 'createdAt' ? ' active' : ''}`}>
+                {formatDate(item.createdAt)}
+              </span>
+              <span className={`doc-list-item-date${sortKey === 'updatedAt' ? ' active' : ''}`}>
+                {formatDate(item.updatedAt)}
+              </span>
+            </div>
+            {/* Gutter is inside the item so hovering it keeps parent :hover alive — no cursor dead zone */}
+            <div className="doc-list-gutter" onClick={(e) => e.stopPropagation()}>
+              {item.onDelete && <ConfirmDeleteButton onConfirm={item.onDelete} size={14} />}
+              <TopicPicker docId={item._id} projectId={item.projectId} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // --- Tab sub-components ---
 
 function ReportsList({
@@ -336,7 +412,6 @@ function ReportsList({
     setError(null);
     setElapsed(0);
 
-    // Tick a timer so the user sees progress
     const timer = setInterval(() => setElapsed(s => s + 1), 1000);
 
     try {
@@ -357,9 +432,18 @@ function ReportsList({
     }
   };
 
+  const items: DocListEntry[] = reports.map(r => ({
+    _id: r._id,
+    title: r.title,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    onClick: (e) => panelNavigate(`/project/${projectId}/report/${r._id}`, e),
+    onDelete: () => deleteReport(r._id),
+    projectId,
+  }));
+
   return (
     <div>
-      {/* New Report button / form */}
       {!showForm && !generating && (
         <button className="btn btn-primary" onClick={() => setShowForm(true)}>
           + New Report
@@ -379,11 +463,7 @@ function ReportsList({
           />
           {error && <div className="report-form-error">{error}</div>}
           <div className="report-form-actions">
-            <button
-              className="btn btn-primary"
-              onClick={handleGenerate}
-              disabled={!query.trim()}
-            >
+            <button className="btn btn-primary" onClick={handleGenerate} disabled={!query.trim()}>
               Generate Report
             </button>
             <button className="btn" onClick={() => { setShowForm(false); setError(null); }}>
@@ -401,7 +481,6 @@ function ReportsList({
             <div className="report-generating-meta">
               "{query.length > 60 ? query.slice(0, 60) + '…' : query}" — {elapsed}s elapsed
             </div>
-
           </div>
         </div>
       )}
@@ -410,28 +489,8 @@ function ReportsList({
         <div className="empty-state">No reports yet.</div>
       )}
       {reports.length > 0 && (
-        <div className="list" style={{ marginTop: showForm || generating ? 0 : 16 }}>
-          {reports.map(report => (
-            <div key={report._id} className="list-item-row">
-              <div
-                className="list-item clickable"
-                onClick={(e) => panelNavigate(`/project/${projectId}/report/${report._id}`, e)}
-              >
-                <div className="list-item-content">
-                  <span className="list-item-title">{report.title}</span>
-                  {report.sourceQuery && (
-                    <span className="list-item-meta">{report.sourceQuery}</span>
-                  )}
-                </div>
-                <span className="list-item-date">{formatDate(report.createdAt)}</span>
-                <ConfirmDeleteButton
-                  onConfirm={() => deleteReport(report._id)}
-                  size={14}
-                />
-              </div>
-              <TopicPicker docId={report._id} projectId={projectId} />
-            </div>
-          ))}
+        <div style={{ marginTop: showForm || generating ? 0 : 16 }}>
+          <DocList items={items} formatDate={formatDate} />
         </div>
       )}
     </div>
@@ -459,40 +518,25 @@ function NotesList({
     panelNavigate(`/project/${projectId}/note/${doc._id}`);
   };
 
+  const items: DocListEntry[] = notes.map(n => ({
+    _id: n._id,
+    title: n.title,
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+    onClick: (e) => panelNavigate(`/project/${projectId}/note/${n._id}`, e),
+    onDelete: () => deleteDoc(n._id),
+    projectId,
+  }));
+
   return (
     <div>
       <button className="btn btn-primary" onClick={handleCreate} style={{ marginBottom: 16 }}>
         + New Note
       </button>
-
-      {notes.length === 0 && (
-        <div className="empty-state">No notes yet.</div>
-      )}
-
-      <div className="list">
-        {notes.map(note => (
-          <div key={note._id} className="list-item-row">
-            <div
-              className="list-item clickable"
-              onClick={(e) => panelNavigate(`/project/${projectId}/note/${note._id}`, e)}
-            >
-              <div className="list-item-content">
-                <span className="list-item-title">{note.title}</span>
-                <span className="list-item-meta">
-                  {note.content.slice(0, 120)}
-                  {note.content.length > 120 ? '…' : ''}
-                </span>
-              </div>
-              <span className="list-item-date">{formatDate(note.updatedAt)}</span>
-              <ConfirmDeleteButton
-                onConfirm={() => deleteDoc(note._id)}
-                size={14}
-              />
-            </div>
-            <TopicPicker docId={note._id} projectId={projectId} />
-          </div>
-        ))}
-      </div>
+      {notes.length === 0
+        ? <div className="empty-state">No notes yet.</div>
+        : <DocList items={items} formatDate={formatDate} />
+      }
     </div>
   );
 }
@@ -517,38 +561,25 @@ function ChatsList({
     panelNavigate(`/project/${projectId}/chat/${doc._id}`);
   };
 
+  const items: DocListEntry[] = chats.map(c => ({
+    _id: c._id,
+    title: c.title,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    onClick: (e) => panelNavigate(`/project/${projectId}/chat/${c._id}`, e),
+    onDelete: () => deleteDoc(c._id),
+    projectId,
+  }));
+
   return (
     <div>
-      <button className="btn btn-primary" onClick={handleNewChat}>
+      <button className="btn btn-primary" onClick={handleNewChat} style={{ marginBottom: 16 }}>
         + New Chat
       </button>
-
-      {chats.length === 0 && (
-        <div className="empty-state">No chats yet.</div>
-      )}
-      {chats.length > 0 && (
-        <div className="list" style={{ marginTop: 16 }}>
-          {chats.map(chat => (
-            <div key={chat._id} className="list-item-row">
-              <div
-                className="list-item clickable"
-                onClick={(e) => panelNavigate(`/project/${projectId}/chat/${chat._id}`, e)}
-              >
-                <div className="list-item-content">
-                  <span className="list-item-title">{chat.title}</span>
-                  <span className="list-item-meta">{chat.messages.length} messages</span>
-                </div>
-                <span className="list-item-date">{formatDate(chat.updatedAt)}</span>
-                <ConfirmDeleteButton
-                  onConfirm={() => deleteDoc(chat._id)}
-                  size={14}
-                />
-              </div>
-              <TopicPicker docId={chat._id} projectId={projectId} />
-            </div>
-          ))}
-        </div>
-      )}
+      {chats.length === 0
+        ? <div className="empty-state">No chats yet.</div>
+        : <DocList items={items} formatDate={formatDate} />
+      }
     </div>
   );
 }

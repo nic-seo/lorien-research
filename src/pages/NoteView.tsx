@@ -5,6 +5,7 @@ import type { Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { TableKit } from '@tiptap/extension-table';
+import { ResizableImage } from '../lib/resizableImage';
 import { Markdown } from 'tiptap-markdown';
 import { marked } from 'marked';
 import { CollapsibleHeadings, restoreCollapsed } from '../lib/collapsibleHeadings';
@@ -13,6 +14,39 @@ import { updateDoc } from '../db';
 import type { Note } from '../db/types';
 import DocHeader from '../components/features/DocHeader';
 import { printNote } from '../lib/printDoc';
+
+// --- Image helpers ---
+
+const MAX_IMAGE_PX = 1600; // max dimension before resizing
+
+/** Resize an image file to fit within MAX_IMAGE_PX × MAX_IMAGE_PX, return base64 data URI. */
+async function resizeToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+      if (width > MAX_IMAGE_PX || height > MAX_IMAGE_PX) {
+        const scale = MAX_IMAGE_PX / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, width, height);
+      // Use PNG for images that might have transparency, JPEG otherwise
+      const mime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+      resolve(canvas.toDataURL(mime, 0.85));
+    };
+    img.onerror = reject;
+    img.src = objectUrl;
+  });
+}
+
+const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 // ---- Note TOC ----
 
@@ -131,6 +165,7 @@ export default function NoteView() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const titleRef = useRef('');
   const contentRef = useRef('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Prevents onUpdate → scheduleSave loop when setContent is called programmatically
   const isSyncingRef = useRef(false);
 
@@ -160,11 +195,26 @@ export default function NoteView() {
     }, 800);
   }, [save]);
 
+  /** Insert one image file into the editor at current cursor. */
+  const insertImage = useCallback(async (file: File) => {
+    if (!ALLOWED_IMAGE_MIME.has(file.type)) return;
+    try {
+      const src = await resizeToDataUrl(file);
+      editorRef.current?.chain().focus().setImage({ src, alt: file.name, title: '' }).run();
+    } catch {
+      // silently skip unreadable files
+    }
+  }, []);
+
+  // Keep a stable ref to the editor so insertImage (stable callback) can access it
+  const editorRef = useRef<Editor | null>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
       CollapsibleHeadings.configure({ noteId: noteId || undefined }),
       TableKit.configure({ table: { resizable: false } }),
+      ResizableImage.configure({ inline: false, allowBase64: true }),
       Placeholder.configure({
         placeholder: 'Start writing...',
       }),
@@ -178,6 +228,29 @@ export default function NoteView() {
       attributes: {
         class: 'note-body',
       },
+      handleDrop(view, event) {
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        const images = files.filter(f => ALLOWED_IMAGE_MIME.has(f.type));
+        if (images.length === 0) return false;
+        event.preventDefault();
+        // Place cursor at drop position
+        const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        if (pos) view.dispatch(view.state.tr.setSelection(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).prosemirror?.TextSelection?.create?.(view.state.doc, pos.pos) ??
+          view.state.tr.selection
+        ));
+        images.forEach(f => insertImage(f));
+        return true;
+      },
+      handlePaste(_view, event) {
+        const files = Array.from(event.clipboardData?.files ?? []);
+        const images = files.filter(f => ALLOWED_IMAGE_MIME.has(f.type));
+        if (images.length === 0) return false;
+        event.preventDefault();
+        images.forEach(f => insertImage(f));
+        return true;
+      },
     },
     onUpdate: ({ editor }) => {
       // Skip saves triggered by our own setContent calls — they don't represent
@@ -188,6 +261,9 @@ export default function NoteView() {
       scheduleSave();
     },
   });
+
+  // Keep editorRef in sync so insertImage (stable callback) always has the latest editor
+  useEffect(() => { editorRef.current = editor; }, [editor]);
 
   // Sync local state when note loads or is updated externally (e.g. chat edit).
   // IMPORTANT: skip content sync while the editor is focused — the user is
@@ -264,6 +340,18 @@ export default function NoteView() {
         }}
       />
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          Array.from(e.target.files ?? []).forEach(f => insertImage(f));
+          e.target.value = '';
+        }}
+      />
+
       <div className="doc-title-bar">
         <div
           ref={titleDivRef}
@@ -280,6 +368,17 @@ export default function NoteView() {
             document.execCommand('insertText', false, text);
           }}
         />
+        <button
+          className="note-image-btn"
+          onClick={() => fileInputRef.current?.click()}
+          title="Insert image (or paste / drag-and-drop)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+        </button>
       </div>
 
       <div className="note-content">

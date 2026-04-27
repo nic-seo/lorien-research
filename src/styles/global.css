@@ -1525,6 +1525,101 @@ h3.subsection-title {
 .tab-count.badge-coral { background: var(--coral-light); color: #8a6050; }
 .tab-count.badge-lavender { background: var(--lavender-light); color: #7a6890; }
 
+/* ===== Doc list (reports / notes / chats tab lists) ===== */
+.doc-list { display: flex; flex-direction: column; }
+
+.doc-list-header {
+  display: flex;
+  align-items: center;
+  padding: 0 68px 6px 8px; /* right padding matches item's gutter reserve */
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+  gap: 4px;
+}
+
+.doc-list-header-title {
+  flex: 1;
+  font-size: 10px;
+  color: var(--text-tertiary, var(--text-secondary));
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.doc-list-sort-btn {
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  width: 96px;
+  text-align: right;
+  transition: color 0.1s;
+}
+.doc-list-sort-btn:hover { color: var(--text); }
+.doc-list-sort-btn.active { color: var(--text); font-weight: 500; }
+
+.doc-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 68px 7px 8px; /* right padding reserves space for the gutter so it stays within bounds */
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+  position: relative;
+}
+.doc-list-item:hover { background: var(--accent-light); }
+
+.doc-list-item-title {
+  flex: 1;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.doc-list-item-dates {
+  display: flex;
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.doc-list-item-date {
+  font-size: 11px;
+  color: var(--text-secondary);
+  width: 96px;
+  text-align: right;
+  transition: color 0.1s;
+}
+.doc-list-item-date.active { color: var(--text); }
+
+/* Gutter: anchored to the right edge of the item's padding area (always within bounds).
+   No gap, no dead zone — hovering anywhere in the padding keeps :hover active. */
+.doc-list-gutter {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s;
+}
+.doc-list-item:hover .doc-list-gutter {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Reveal the delete button when gutter is visible */
+.doc-list-item:hover .doc-list-gutter .btn-delete { opacity: 1; }
+/* Topic picker inside gutter: the > rules below already exclude it, no override needed */
+
 /* ===== List (content lists in project tabs) ===== */
 .list { display: flex; flex-direction: column; gap: 6px; }
 
@@ -1535,16 +1630,18 @@ h3.subsection-title {
 .list-item-row .list-item {
   margin-bottom: 0;
 }
-.list-item-row .topic-picker {
+/* Only applies when topic-picker is a direct child of list-item-row (old-style lists).
+   Does NOT match when it's nested inside .doc-list-gutter. */
+.list-item-row > .topic-picker {
   position: absolute;
   left: calc(100% + 6px);
   top: 50%;
   transform: translateY(-50%);
 }
-.list-item-row .topic-picker-btn,
-.list-item-row .topic-picker-btn.has-topics { opacity: 0; }
-.list-item-row:hover .topic-picker-btn,
-.list-item-row:hover .topic-picker-btn.has-topics { opacity: 1; }
+.list-item-row > .topic-picker .topic-picker-btn,
+.list-item-row > .topic-picker .topic-picker-btn.has-topics { opacity: 0; }
+.list-item-row:hover > .topic-picker .topic-picker-btn,
+.list-item-row:hover > .topic-picker .topic-picker-btn.has-topics { opacity: 1; }
 
 .list-item.clickable { cursor: pointer; }
 .list-item-content { flex: 1; min-width: 0; }
@@ -2240,8 +2337,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   padding-left: 14px;
   font-size: 10.5px;
 }
-/* Wide: TOC is always visible in the gutter */
-@container (min-width: 901px) {
+/* Wide: TOC is always visible in the gutter (needs ~1240px to clear content) */
+@container (min-width: 1240px) {
   .note-toc {
     /* Positioned just left of the centered 800px content area */
     left: max(4px, calc(50% - 576px));
@@ -2268,7 +2365,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
     left: max(4px, calc(50% - 516px));
   }
 }
-@container (max-width: 900px) {
+/* Slide-in hover mode for panels narrower than gutter threshold */
+@container (max-width: 1239px) {
   .note-toc-trigger {
     display: block;
     position: absolute;
@@ -2286,7 +2384,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
     box-shadow: var(--shadow-lg);
     transform: translateX(-100%);
     opacity: 0;
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    /* Delay opening so quick passes to fold buttons don't accidentally open the TOC */
+    transition: transform 0.2s ease 0.25s, opacity 0.2s ease 0.25s;
     pointer-events: none;
   }
   .note-toc-trigger:hover + .note-toc,
@@ -2294,6 +2393,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
     transform: translateX(0);
     opacity: 1;
     pointer-events: auto;
+    /* No delay when closing — snaps shut as soon as cursor leaves */
+    transition: transform 0.15s ease, opacity 0.15s ease;
   }
 }
 .note-body {
@@ -2516,6 +2617,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 }
 .panel-body .doc-title-bar,
 .panel-body .chat-title-bar,
+.panel-body .chat-fork-banner,
 .panel-body .chat-messages,
 .panel-body .chat-input-area {
   max-width: 800px;
@@ -2524,7 +2626,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   box-sizing: border-box;
 }
 .panel-body .doc-title-bar,
-.panel-body .chat-title-bar {
+.panel-body .chat-title-bar,
+.panel-body .chat-fork-banner {
   padding-left: 24px;
   padding-right: 24px;
 }
@@ -2554,6 +2657,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 }
 .content-area:has(.panel:only-child) .panel-body .doc-title-bar,
 .content-area:has(.panel:only-child) .panel-body .chat-title-bar,
+.content-area:has(.panel:only-child) .panel-body .chat-fork-banner,
 .content-area:has(.panel:only-child) .panel-body .chat-messages,
 .content-area:has(.panel:only-child) .panel-body .chat-input-area {
   max-width: 900px;
@@ -2561,7 +2665,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   margin-right: auto;
 }
 .content-area:has(.panel:only-child) .panel-body .doc-title-bar,
-.content-area:has(.panel:only-child) .panel-body .chat-title-bar {
+.content-area:has(.panel:only-child) .panel-body .chat-title-bar,
+.content-area:has(.panel:only-child) .panel-body .chat-fork-banner {
   padding-left: 32px;
   padding-right: 32px;
 }
@@ -2597,6 +2702,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 [data-width="narrow"] .panel-body > .page-loading,
 [data-width="narrow"] .panel-body .doc-title-bar,
 [data-width="narrow"] .panel-body .chat-title-bar,
+[data-width="narrow"] .panel-body .chat-fork-banner,
 [data-width="narrow"] .panel-body .chat-messages,
 [data-width="narrow"] .panel-body .chat-input-area {
   max-width: 620px;
@@ -2607,6 +2713,7 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 [data-width="narrow"] .content-area:has(.panel:only-child) .panel-body > .page-loading,
 [data-width="narrow"] .content-area:has(.panel:only-child) .panel-body .doc-title-bar,
 [data-width="narrow"] .content-area:has(.panel:only-child) .panel-body .chat-title-bar,
+[data-width="narrow"] .content-area:has(.panel:only-child) .panel-body .chat-fork-banner,
 [data-width="narrow"] .content-area:has(.panel:only-child) .panel-body .chat-messages,
 [data-width="narrow"] .content-area:has(.panel:only-child) .panel-body .chat-input-area,
 [data-width="narrow"] .content-area:has(.panel:only-child) .project-detail-scroll,
@@ -2753,6 +2860,76 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 [data-theme="dark"] .doc-title-pink  { background-image: linear-gradient(transparent 62%, rgba(240,184,200,0.45) 62%); }
 [data-theme="dark"] .doc-title-green { background-image: linear-gradient(transparent 62%, rgba(168,213,186,0.45) 62%); }
 [data-theme="dark"] .chat-title-text { background-image: linear-gradient(transparent 62%, rgba(168,200,232,0.45) 62%); }
+/* Image insert button in the note title bar */
+.doc-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.note-image-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+.doc-title-bar:hover .note-image-btn,
+.note-image-btn:focus { opacity: 1; }
+.note-image-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+/* Resizable image node view */
+.resizable-image-outer {
+  display: block;
+  margin: 12px 0;
+  line-height: 0;
+}
+.resizable-image-container {
+  display: inline-block;
+  position: relative;
+  max-width: 100%;
+  line-height: 0;
+}
+.resizable-image-container img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  user-select: none;
+}
+.resizable-image-container.selected img {
+  outline: 2px solid var(--accent);
+  border-radius: 4px;
+}
+.resize-handle-br {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  border-radius: 2px;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+.resizable-image-container:hover .resize-handle-br,
+.resizable-image-container.selected .resize-handle-br { opacity: 1; }
+
 /* Editable note title (contenteditable) — same visual as doc-title-text */
 .doc-title-input {
   background-image: linear-gradient(transparent 62%, rgba(168,213,186,0.65) 62%);
@@ -2873,8 +3050,42 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
 .chat-toc-link:hover { opacity: 1; color: var(--accent); }
 .chat-toc-link.active { opacity: 1; color: var(--accent); font-weight: 600; }
 
-/* Wide: gutter mode — chat single-panel is 900px, same calc as note */
-@container (min-width: 901px) {
+.chat-toc-inherited { margin-bottom: 2px; }
+.chat-toc-inherited .chat-toc-link { opacity: 0.55; }
+
+.chat-toc-fork-divider {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 5px 0 7px;
+  color: var(--text-muted);
+  opacity: 0.65;
+}
+.chat-toc-fork-divider::before {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.chat-toc-fork-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: opacity 0.15s, background 0.15s;
+  opacity: 0.7;
+}
+.chat-toc-fork-toggle:hover { opacity: 1; background: var(--bg-hover); }
+.chat-toc-fork-toggle.expanded .fork-history-chevron { transform: rotate(180deg); }
+
+/* Wide: gutter mode — needs ~1240px to clear content */
+@container (min-width: 1240px) {
   .chat-toc {
     left: max(4px, calc(50% - 626px));
     width: 160px;
@@ -2891,8 +3102,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
     left: max(4px, calc(50% - 516px));
   }
 }
-/* Narrow: slide-in popup */
-@container (max-width: 900px) {
+/* Slide-in hover mode for panels narrower than gutter threshold */
+@container (max-width: 1239px) {
   .chat-toc-trigger {
     display: block;
     position: absolute;
@@ -2910,7 +3121,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
     box-shadow: var(--shadow-lg);
     transform: translateX(-100%);
     opacity: 0;
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    /* Delay opening so quick cursor passes don't fire the TOC */
+    transition: transform 0.2s ease 0.25s, opacity 0.2s ease 0.25s;
     pointer-events: none;
   }
   .chat-toc-trigger:hover + .chat-toc,
@@ -2918,6 +3130,8 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
     transform: translateX(0);
     opacity: 1;
     pointer-events: auto;
+    /* No delay on close */
+    transition: transform 0.15s ease, opacity 0.15s ease;
   }
 }
 
@@ -3004,27 +3218,86 @@ textarea.form-input { resize: vertical; line-height: 1.6; }
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 32px;
+  padding-top: 6px;
+  padding-bottom: 14px;
   font-size: 10.5px;
-  color: var(--text-secondary);
-  background: rgba(200, 184, 224, 0.1);
-  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
   flex-shrink: 0;
+  position: relative;
+  z-index: 3;
 }
-.chat-fork-banner svg { opacity: 0.6; flex-shrink: 0; }
+.chat-fork-banner svg { flex-shrink: 0; }
 .chat-fork-banner-link {
   background: none;
   border: none;
   padding: 0;
   font-family: inherit;
   font-size: inherit;
-  color: var(--accent);
+  color: inherit;
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.chat-fork-banner-link:hover { opacity: 0.75; }
-.chat-fork-banner-meta { opacity: 0.55; }
+.chat-fork-banner-link:hover { color: var(--accent); }
+.chat-fork-banner-meta { opacity: 0.7; }
+
+/* ---- Fork history collapse ---- */
+.fork-history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.7;
+  flex-shrink: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.fork-history-toggle:hover { opacity: 1; background: var(--bg-hover); }
+.fork-history-chevron {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.fork-history-toggle.expanded .fork-history-chevron { transform: rotate(180deg); }
+
+.fork-history-block {
+  opacity: 0.65;
+  border-left: 2px solid var(--border);
+  margin-left: 4px;
+  padding-left: 10px;
+  margin-bottom: 4px;
+}
+.fork-history-block .chat-message-wrap { margin-bottom: 8px; }
+
+.fork-history-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+  opacity: 0.8;
+}
+.fork-history-divider::before,
+.fork-history-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.fork-history-divider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .chat-message {
   line-height: 1.7;
 }
