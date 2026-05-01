@@ -111,7 +111,7 @@ export interface SendChatResult {
 
 export interface ChatToolEvent {
   type: 'tool';
-  tool: 'web_search' | 'read_page' | 'read_note' | 'edit_note' | 'recall_attachment' | 'search_twitter' | 'run_agent';
+  tool: 'web_search' | 'read_page' | 'read_note' | 'edit_note' | 'recall_attachment' | 'search_twitter' | 'search_youtube' | 'run_agent';
   /** Populated when tool === 'web_search' or 'search_twitter' */
   query?: string;
   /** Populated when tool === 'read_page' */

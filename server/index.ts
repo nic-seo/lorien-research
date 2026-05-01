@@ -45,9 +45,9 @@ function buildRunAgentTool(agents: AgentConfig[]): Anthropic.Messages.Tool {
     description:
       `Delegate a research task to a specialized sub-agent that will run its own multi-step investigation ` +
       `and return a synthesized result. Use this when a task benefits from focused, iterative research — ` +
-      `for example, gathering comprehensive Twitter/X intelligence typically requires multiple targeted ` +
-      `searches and reading linked pages, which the Twitter agent handles better than a single search call. ` +
-      `Available agents: ${list}.`,
+      `for example, gathering comprehensive Twitter/X intelligence or finding the best YouTube videos on a ` +
+      `topic typically requires multiple targeted searches, which the dedicated agents handle better than ` +
+      `a single search call. Available agents: ${list}.`,
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -310,6 +310,104 @@ async function executeTwitterSearch(query: string, count: number = 20, sort: str
   }
 }
 
+// --- YouTube search via Apify ---
+
+async function executeYouTubeSearch(
+  query: string,
+  count: number = 10,
+  order: string = 'relevance',
+  duration: string = 'any',
+  publishedAfter?: string,
+): Promise<string> {
+  if (!apifyApiKey) {
+    return 'Error: APIFY_API_TOKEN not configured. Cannot search YouTube.';
+  }
+
+  // grow_media~youtube-search-api: uses YouTube Data API, auto-authenticated, $0.001/result
+  const actorId = 'grow_media~youtube-search-api';
+  const url =
+    `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items` +
+    `?token=${apifyApiKey}&timeout=60&memory=512`;
+
+  const input: Record<string, unknown> = {
+    q: query,
+    maxResults: Math.min(Math.max(count, 1), 20),
+    order,
+    videoDuration: duration,
+    relevanceLanguage: 'en',
+  };
+  if (publishedAfter) input.publishedAfter = publishedAfter;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      signal: AbortSignal.timeout(65_000),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      console.error(`[youtube] HTTP ${response.status} ${response.statusText}: ${body.slice(0, 500)}`);
+      return `YouTube search error: ${response.status} ${response.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`;
+    }
+
+    const rawBody = await response.text();
+    console.log(`[youtube] raw response (first 500 chars): ${rawBody.slice(0, 500)}`);
+
+    let items: Record<string, unknown>[];
+    try {
+      items = JSON.parse(rawBody) as Record<string, unknown>[];
+    } catch {
+      return `YouTube search error: could not parse response — ${rawBody.slice(0, 200)}`;
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return 'No YouTube videos found for this query.';
+    }
+
+    console.log(`[youtube] first item keys: ${Object.keys(items[0]).join(', ')}`);
+    console.log(`[youtube] first item sample: ${JSON.stringify(items[0]).slice(0, 1000)}`);
+
+    return items.map((item, i) => {
+      // Flexible field mapping — actor output varies slightly
+      const videoId = (item.id ?? item.videoId ?? item.video_id ?? '') as string;
+      const title   = (item.title ?? item.videoTitle ?? item.name ?? '(untitled)') as string;
+      const channel = (item.channelTitle ?? item.channel ?? item.channelName ?? item.author ?? '') as string;
+      const desc    = (item.description ?? item.shortDescription ?? item.snippet ?? '') as string;
+      const views   = (item.viewCount ?? item.views ?? item.statistics?.viewCount ?? 0) as number;
+      const likes   = (item.likeCount ?? item.likes ?? item.statistics?.likeCount ?? 0) as number;
+      const dur     = (item.duration ?? item.contentDetails?.duration ?? '') as string;
+      const dateRaw = (item.publishedAt ?? item.publishDate ?? item.date ?? '') as string;
+      const dateStr = dateRaw
+        ? new Date(dateRaw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : '';
+      const videoUrl = (item.url ?? item.videoUrl ?? item.link ??
+        (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '')) as string;
+
+      const meta = [
+        channel ? `@${channel}` : '',
+        dateStr,
+        views   ? `${(views / 1000).toFixed(0)}K views` : '',
+        likes   ? `${(likes / 1000).toFixed(1)}K likes` : '',
+        dur     ? dur : '',
+      ].filter(Boolean).join(' · ');
+
+      const descSnippet = (desc as string).slice(0, 180).trim();
+      return (
+        `[${i + 1}] ${title}${meta ? '\n    ' + meta : ''}` +
+        (descSnippet ? `\n    ${descSnippet}${(desc as string).length > 180 ? '…' : ''}` : '') +
+        (videoUrl ? `\n    ${videoUrl}` : '')
+      );
+    }).join('\n\n');
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return 'YouTube search timed out after 60s.';
+    }
+    return `YouTube search error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+  }
+}
+
 const TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: 'web_search',
@@ -371,6 +469,42 @@ const TOOLS: Anthropic.Messages.Tool[] = [
           type: 'string',
           enum: ['Top', 'Latest', 'Latest + Top'],
           description: '"Top" for most-engaged results (default, most reliable), "Latest" for newest first, "Latest + Top" for a mix.',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'search_youtube',
+    description:
+      'Search YouTube for videos on a topic. Best for: tutorials, conference talks, demos, explainers, ' +
+      'interviews, and any topic where video format is valuable. Returns video titles, channels, view counts, ' +
+      'descriptions, and URLs. Sort by "relevance" (default), "date" (newest), "viewCount" (most-watched), ' +
+      'or "rating" (top-rated). Filter by duration: "any", "short" (<4 min), "medium" (4–20 min), "long" (>20 min).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The YouTube search query.',
+        },
+        count: {
+          type: 'number',
+          description: 'Number of results to return (1–20, default 10).',
+        },
+        order: {
+          type: 'string',
+          enum: ['relevance', 'date', 'viewCount', 'rating'],
+          description: 'Sort order. "relevance" for best match (default), "date" for newest first, "viewCount" for most watched, "rating" for highest rated.',
+        },
+        duration: {
+          type: 'string',
+          enum: ['any', 'short', 'medium', 'long'],
+          description: 'Filter by video length: "any" (default), "short" (<4 min), "medium" (4–20 min), "long" (>20 min).',
+        },
+        publishedAfter: {
+          type: 'string',
+          description: 'ISO 8601 date (e.g. "2024-01-01T00:00:00Z") to restrict results to videos published after this date.',
         },
       },
       required: ['query'],
@@ -442,6 +576,8 @@ async function runSubAgent(
         // Pipe sub-agent tool events through to the client SSE stream
         if (block.name === 'search_twitter') {
           emit({ type: 'tool', tool: 'search_twitter', query: input.query as string });
+        } else if (block.name === 'search_youtube') {
+          emit({ type: 'tool', tool: 'search_youtube', query: input.query as string });
         } else if (block.name === 'read_page') {
           const url = input.url as string;
           let domain = url;
@@ -455,6 +591,14 @@ async function runSubAgent(
             input.query as string,
             (input.count as number) || 20,
             (input.sort as string) || 'Top',
+          );
+        } else if (block.name === 'search_youtube') {
+          result = await executeYouTubeSearch(
+            input.query as string,
+            (input.count as number) || 10,
+            (input.order as string) || 'relevance',
+            (input.duration as string) || 'any',
+            input.publishedAfter as string | undefined,
           );
         } else if (block.name === 'read_page') {
           result = await executeReadPage(input.url as string);
@@ -633,6 +777,14 @@ export function createServer(port: number, options?: {
                 input.query as string,
                 (input.count as number) || 20,
                 (input.sort as string) || 'Top',
+              );
+            } else if (block.name === 'search_youtube') {
+              result = await executeYouTubeSearch(
+                input.query as string,
+                (input.count as number) || 10,
+                (input.order as string) || 'relevance',
+                (input.duration as string) || 'any',
+                input.publishedAfter as string | undefined,
               );
             } else {
               result = `Unknown tool: ${block.name}`;
@@ -847,7 +999,9 @@ export function createServer(port: number, options?: {
         `Sub-agents conduct focused, multi-step research and return a synthesized result. ` +
         `Use run_agent when depth and iteration are needed — for example, comprehensive Twitter/X ` +
         `research works much better through the Twitter agent (which can run multiple targeted searches ` +
-        `and read linked pages) than a single search_twitter call.`;
+        `and read linked pages) than a single search call, and finding the best YouTube videos on a topic ` +
+        `works better through the YouTube agent (which can search across multiple angles and filter by ` +
+        `duration, recency, and view count).`;
     }
 
     // Add recall_attachment tool when there are attachments in the cache
@@ -1015,6 +1169,8 @@ export function createServer(port: number, options?: {
               emit({ type: 'tool', tool: 'read_page', url, domain });
             } else if (block.name === 'search_twitter') {
               emit({ type: 'tool', tool: 'search_twitter', query: input.query as string });
+            } else if (block.name === 'search_youtube') {
+              emit({ type: 'tool', tool: 'search_youtube', query: input.query as string });
             } else if (block.name === 'run_agent') {
               const agentName = input.agent as string;
               const agentConfig = loadedAgents.find((a) => a.name === agentName);
@@ -1043,6 +1199,14 @@ export function createServer(port: number, options?: {
                 input.query as string,
                 (input.count as number) || 20,
                 (input.sort as string) || 'Top',
+              );
+            } else if (block.name === 'search_youtube') {
+              result = await executeYouTubeSearch(
+                input.query as string,
+                (input.count as number) || 10,
+                (input.order as string) || 'relevance',
+                (input.duration as string) || 'any',
+                input.publishedAfter as string | undefined,
               );
             } else if (block.name === 'run_agent') {
               const agentName = input.agent as string;

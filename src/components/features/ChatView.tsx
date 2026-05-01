@@ -584,6 +584,7 @@ export default function ChatView() {
                   <span className="chat-trace-icon">
                     {event.tool === 'web_search' ? '⌕' :
                      event.tool === 'search_twitter' ? '𝕏' :
+                     event.tool === 'search_youtube' ? '▶' :
                      event.tool === 'run_agent' ? '⬡' :
                      event.tool === 'read_note' ? '📖' :
                      event.tool === 'edit_note' ? '✏️' :
@@ -592,7 +593,7 @@ export default function ChatView() {
                   <span className="chat-trace-label">
                     {event.tool === 'run_agent'
                       ? `${event.agentName}${event.task ? ` — ${event.task.slice(0, 60)}${event.task.length > 60 ? '…' : ''}` : ''}`
-                      : event.tool === 'web_search' || event.tool === 'search_twitter'
+                      : event.tool === 'web_search' || event.tool === 'search_twitter' || event.tool === 'search_youtube'
                       ? event.query
                       : event.tool === 'read_note' || event.tool === 'edit_note'
                       ? event.noteTitle
@@ -784,6 +785,7 @@ export default function ChatView() {
                       <span className="chat-trace-icon">
                         {event.tool === 'web_search' ? '⌕' :
                          event.tool === 'search_twitter' ? '𝕏' :
+                         event.tool === 'search_youtube' ? '▶' :
                          event.tool === 'run_agent' ? '⬡' :
                          event.tool === 'read_note' ? '📖' :
                          event.tool === 'edit_note' ? '✏️' :
@@ -792,7 +794,7 @@ export default function ChatView() {
                       <span className="chat-trace-label">
                         {event.tool === 'run_agent'
                           ? `${event.agentName}${event.task ? ` — ${event.task.slice(0, 60)}${event.task.length > 60 ? '…' : ''}` : ''}`
-                          : event.tool === 'web_search' || event.tool === 'search_twitter'
+                          : event.tool === 'web_search' || event.tool === 'search_twitter' || event.tool === 'search_youtube'
                           ? event.query
                           : event.tool === 'read_note' || event.tool === 'edit_note'
                           ? event.noteTitle
