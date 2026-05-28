@@ -1,8 +1,8 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
-import { readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve, dirname, join, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Server } from 'node:http';
 
@@ -73,17 +73,19 @@ function buildRunAgentTool(agents: AgentConfig[]): Anthropic.Messages.Tool {
 let anthropic: Anthropic | null = null;
 let braveApiKey: string | null = null;
 let apifyApiKey: string | null = null;
+let logseqDir: string | null = null;
 
 /**
  * Update API keys at runtime. Called by Electron main process via IPC,
  * or at startup in standalone mode.
  */
-export function updateKeys(anthropicKey: string, brave?: string, apify?: string): void {
+export function updateKeys(anthropicKey: string, brave?: string, apify?: string, logseq?: string): void {
   if (anthropicKey) {
     anthropic = new Anthropic({ apiKey: anthropicKey });
   }
   braveApiKey = brave || null;
   apifyApiKey = apify || null;
+  logseqDir = logseq || null;
 }
 
 // --- Web search tools ---
@@ -408,6 +410,196 @@ async function executeYouTubeSearch(
   }
 }
 
+// --- Logseq notes access ---
+
+function getAllMdFiles(dir: string): string[] {
+  const files: string[] = [];
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        files.push(...getAllMdFiles(fullPath));
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        files.push(fullPath);
+      }
+    }
+  } catch { /* skip unreadable dirs */ }
+  return files;
+}
+
+async function executeLogseqSearch(query: string, maxResults: number = 15): Promise<string> {
+  if (!logseqDir) return 'Error: LOGSEQ_DIR not configured. Cannot search Logseq vault.';
+
+  const files = getAllMdFiles(logseqDir);
+  const queryLower = query.toLowerCase();
+  const results: { relativePath: string; pageName: string; isJournal: boolean; excerpts: string[] }[] = [];
+
+  for (const file of files) {
+    if (results.length >= maxResults) break;
+    try {
+      const content = readFileSync(file, 'utf-8');
+      if (!content.toLowerCase().includes(queryLower)) continue;
+
+      const relativePath = relative(logseqDir, file);
+      const isJournal = relativePath.startsWith('journals');
+      const pageName = basename(file, '.md');
+      const lines = content.split('\n');
+      const excerpts: string[] = [];
+
+      let i = 0;
+      while (i < lines.length && excerpts.length < 3) {
+        if (lines[i].toLowerCase().includes(queryLower)) {
+          const start = Math.max(0, i - 1);
+          const end = Math.min(lines.length - 1, i + 3);
+          const snippet = lines.slice(start, end + 1).filter((l) => l.trim()).join('\n').trim();
+          if (snippet) excerpts.push(snippet);
+          i = end + 1;
+        } else {
+          i++;
+        }
+      }
+
+      results.push({ relativePath, pageName, isJournal, excerpts });
+    } catch { /* skip unreadable files */ }
+  }
+
+  if (results.length === 0) return `No pages found matching "${query}" in Logseq vault.`;
+
+  return results.map((r, i) => {
+    const label = r.isJournal ? `📅 ${r.pageName} (journal)` : `📄 ${r.pageName}`;
+    const excerptText = r.excerpts
+      .map((e) => '    ' + e.replace(/\n/g, '\n    '))
+      .join('\n    ···\n');
+    return `[${i + 1}] ${label}\n${excerptText || '    (match found — use read_logseq_page to see full content)'}`;
+  }).join('\n\n');
+}
+
+async function executeLogseqReadPage(pageName: string): Promise<string> {
+  if (!logseqDir) return 'Error: LOGSEQ_DIR not configured. Cannot read Logseq vault.';
+
+  // Strip [[wikilink]] syntax if passed that way
+  const normalized = pageName.replace(/^\[\[|\]\]$/g, '').trim();
+
+  // Build candidate paths — try pages/ first, then journals/, then root
+  const candidates: string[] = [
+    join(logseqDir, 'pages', `${normalized}.md`),
+    join(logseqDir, 'journals', `${normalized}.md`),
+    join(logseqDir, `${normalized}.md`),
+  ];
+
+  // YYYY-MM-DD date input → also try Logseq's underscore journal format
+  const dateMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateMatch) {
+    candidates.unshift(
+      join(logseqDir, 'journals', `${dateMatch[1]}_${dateMatch[2]}_${dateMatch[3]}.md`),
+    );
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const content = readFileSync(candidate, 'utf-8');
+      const MAX_CHARS = 10_000;
+      return content.length > MAX_CHARS
+        ? content.slice(0, MAX_CHARS) + '\n\n[...truncated — page exceeds 10,000 characters]'
+        : content || '(empty page)';
+    } catch { /* try next */ }
+  }
+
+  // Case-insensitive fallback: walk the whole vault
+  const files = getAllMdFiles(logseqDir);
+  const match = files.find((f) => basename(f, '.md').toLowerCase() === normalized.toLowerCase());
+  if (match) {
+    try {
+      const content = readFileSync(match, 'utf-8');
+      const MAX_CHARS = 10_000;
+      return content.length > MAX_CHARS ? content.slice(0, MAX_CHARS) + '\n\n[...truncated]' : content || '(empty page)';
+    } catch { /* fall through */ }
+  }
+
+  return `Page "${pageName}" not found in the Logseq vault. Try search_logseq to find the correct page name.`;
+}
+
+interface LogseqAppendItem {
+  pageName: string;
+  filePath: string;
+  content: string;
+  pageExists: boolean;
+}
+
+function stageLogseqAppend(
+  pageName: string,
+  mainPage: string,
+  topicSummary: string,
+  content: string,
+  tags: string[],
+  pendingAppends: LogseqAppendItem[],
+): string {
+  if (!logseqDir) return 'Error: LOGSEQ_DIR not configured. Cannot write to Logseq vault.';
+
+  const normalized = pageName.replace(/^\[\[|\]\]$/g, '').trim();
+  const mainPageClean = mainPage.replace(/^\[\[|\]\]$/g, '').trim();
+
+  // Resolve target file path
+  let filePath: string | null = null;
+  let pageExists = false;
+
+  const dateMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const candidates: string[] = [];
+  if (dateMatch) {
+    candidates.push(join(logseqDir, 'journals', `${dateMatch[1]}_${dateMatch[2]}_${dateMatch[3]}.md`));
+  }
+  candidates.push(
+    join(logseqDir, 'pages', `${normalized}.md`),
+    join(logseqDir, 'journals', `${normalized}.md`),
+  );
+
+  for (const candidate of candidates) {
+    try {
+      readFileSync(candidate);
+      filePath = candidate;
+      pageExists = true;
+      break;
+    } catch { /* try next */ }
+  }
+
+  if (!filePath) {
+    filePath = dateMatch
+      ? join(logseqDir, 'journals', `${dateMatch[1]}_${dateMatch[2]}_${dateMatch[3]}.md`)
+      : join(logseqDir, 'pages', `${normalized}.md`);
+  }
+
+  // Build the extra tag string (agent-supplied tags, deduplicated, no 'Lorien')
+  const extraTags = tags
+    .map((t) => t.replace(/^#/, '').trim())
+    .filter((t) => t && t.toLowerCase() !== 'lorien')
+    .slice(0, 2) // cap at 2 additional tags
+    .map((t) => `#${t}`)
+    .join(' ');
+
+  // Server constructs the formatted block — agent never needs to get this right
+  const now = new Date();
+  const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+  const header = `- ${timeStr} [[${mainPageClean}]]: ${topicSummary.trim()} #Lorien${extraTags ? ' ' + extraTags : ''}`;
+
+  // Format nested content — each line becomes an indented child block
+  const nestedContent = content
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim())
+    .map((line) => {
+      const stripped = line.replace(/^[-*]\s*/, '').trimStart();
+      return `  - ${stripped}`;
+    })
+    .join('\n');
+
+  const formattedContent = nestedContent ? `${header}\n${nestedContent}` : header;
+
+  pendingAppends.push({ pageName: normalized, filePath, content: formattedContent, pageExists });
+  return `Append to "${normalized}" staged for user confirmation. It won't be written to disk until they accept.`;
+}
+
 const TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: 'web_search',
@@ -510,6 +702,91 @@ const TOOLS: Anthropic.Messages.Tool[] = [
       required: ['query'],
     },
   },
+  {
+    name: 'search_logseq',
+    description:
+      'Search across all pages and journal entries in the user\'s Logseq notes vault. ' +
+      'Returns matching page names and relevant excerpts. Use this to find notes mentioning ' +
+      'a topic, person, project, or idea — including past daily journal entries.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The text to search for across all Logseq pages and journals.',
+        },
+        maxResults: {
+          type: 'number',
+          description: 'Maximum number of matching pages to return (default 15).',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_logseq_page',
+    description:
+      'Read the full content of a specific Logseq page or journal entry. ' +
+      'Pass the page name (e.g. "Daily Log", "context engineering") or a journal date in YYYY-MM-DD format.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        pageName: {
+          type: 'string',
+          description: 'The page name or journal date (YYYY-MM-DD) to read. Wikilink syntax [[page]] is also accepted.',
+        },
+      },
+      required: ['pageName'],
+    },
+  },
+  {
+    name: 'append_to_logseq_page',
+    description:
+      'Stage new content to be appended to a Logseq journal entry. ' +
+      'The server constructs the formatted block automatically — you only need to supply ' +
+      'the target page (almost always today\'s date), the best [[Main Page]] for categorisation, ' +
+      'the content, and any relevant tags. ' +
+      'The write is held for user confirmation before anything touches disk.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        pageName: {
+          type: 'string',
+          description:
+            'Where to write. Almost always today\'s date in YYYY-MM-DD format (the daily journal). ' +
+            'Only use a different page name if the user explicitly asks.',
+        },
+        mainPage: {
+          type: 'string',
+          description:
+            'The existing Logseq page that best categorises this entry — used as a [[backlink]] in the block header. ' +
+            'Choose from pages you have already seen via search or read in this session. ' +
+            'Common choices: "Daily Log" for general activity, "Habit Tracker" for habits/tracking. ' +
+            'Do not include [[ ]] brackets.',
+        },
+        topicSummary: {
+          type: 'string',
+          description:
+            '2–5 word summary of what this specific entry is about (e.g. "morning run logged", ' +
+            '"context engineering discussion", "drinks logged"). No period. Each append should have its own unique summary.',
+        },
+        content: {
+          type: 'string',
+          description:
+            'The body of the entry. Plain text or simple markdown — the server will format it as nested Logseq blocks. ' +
+            'Multiple lines are fine; each becomes its own nested bullet.',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Up to 2 additional tags (without # prefix). Only include tags you have seen used in the vault. ' +
+            '#Lorien is always added automatically — do not include it here.',
+        },
+      },
+      required: ['pageName', 'mainPage', 'topicSummary', 'content'],
+    },
+  },
 ];
 
 // --- Sub-agent runner ---
@@ -518,6 +795,8 @@ async function runSubAgent(
   config: AgentConfig,
   task: string,
   emit: (event: object) => void,
+  pendingLogseqAppends: LogseqAppendItem[],
+  chatTitle: string,
 ): Promise<string> {
   const subMessages: Anthropic.Messages.MessageParam[] = [
     { role: 'user', content: task },
@@ -555,6 +834,7 @@ async function runSubAgent(
     if (response.stop_reason === 'tool_use') {
       subMessages.push({ role: 'assistant', content: response.content });
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+      let allCapped = true; // tracks whether every tool in this batch hit the cap
 
       for (const block of response.content) {
         if (block.type !== 'tool_use') continue;
@@ -569,6 +849,7 @@ async function runSubAgent(
           continue;
         }
 
+        allCapped = false; // at least one real tool call happened
         totalToolCalls++;
         const input = block.input as Record<string, unknown>;
         console.log(`[agent:${config.name}]   Tool ${totalToolCalls}: ${block.name}(${JSON.stringify(input).slice(0, 120)})`);
@@ -578,6 +859,12 @@ async function runSubAgent(
           emit({ type: 'tool', tool: 'search_twitter', query: input.query as string });
         } else if (block.name === 'search_youtube') {
           emit({ type: 'tool', tool: 'search_youtube', query: input.query as string });
+        } else if (block.name === 'search_logseq') {
+          emit({ type: 'tool', tool: 'search_logseq', query: input.query as string });
+        } else if (block.name === 'read_logseq_page') {
+          emit({ type: 'tool', tool: 'read_logseq_page', query: input.pageName as string });
+        } else if (block.name === 'append_to_logseq_page') {
+          emit({ type: 'tool', tool: 'append_to_logseq_page', query: input.pageName as string });
         } else if (block.name === 'read_page') {
           const url = input.url as string;
           let domain = url;
@@ -600,6 +887,22 @@ async function runSubAgent(
             (input.duration as string) || 'any',
             input.publishedAfter as string | undefined,
           );
+        } else if (block.name === 'search_logseq') {
+          result = await executeLogseqSearch(
+            input.query as string,
+            (input.maxResults as number) || 15,
+          );
+        } else if (block.name === 'read_logseq_page') {
+          result = await executeLogseqReadPage(input.pageName as string);
+        } else if (block.name === 'append_to_logseq_page') {
+          result = stageLogseqAppend(
+            input.pageName as string,
+            input.mainPage as string,
+            input.topicSummary as string,
+            input.content as string,
+            (input.tags as string[]) || [],
+            pendingLogseqAppends,
+          );
         } else if (block.name === 'read_page') {
           result = await executeReadPage(input.url as string);
         } else {
@@ -614,6 +917,14 @@ async function runSubAgent(
       }
 
       subMessages.push({ role: 'user', content: toolResults });
+
+      // If every tool call in this batch was capped, don't burn another loop —
+      // Claude already has "synthesize now" messages for all of them and will end_turn next.
+      if (allCapped) {
+        console.log(`[agent:${config.name}] All tools in batch were capped — forcing final synthesis loop.`);
+        loops = MAX_LOOPS - 1; // ensures exactly one more loop (the synthesis)
+      }
+
       continue;
     }
 
@@ -786,6 +1097,13 @@ export function createServer(port: number, options?: {
                 (input.duration as string) || 'any',
                 input.publishedAfter as string | undefined,
               );
+            } else if (block.name === 'search_logseq') {
+              result = await executeLogseqSearch(
+                input.query as string,
+                (input.maxResults as number) || 15,
+              );
+            } else if (block.name === 'read_logseq_page') {
+              result = await executeLogseqReadPage(input.pageName as string);
             } else {
               result = `Unknown tool: ${block.name}`;
             }
@@ -855,12 +1173,13 @@ export function createServer(port: number, options?: {
   app.post('/api/chat', async (req: express.Request, res: express.Response) => {
     if (!requireApiKey(res)) return;
 
-    const { messages, projectContext, summary: existingSummary, linkedNotes, attachmentCache } = req.body as {
+    const { messages, projectContext, summary: existingSummary, linkedNotes, attachmentCache, chatTitle } = req.body as {
       messages?: { role: string; content: string; attachments?: { name: string; mimeType: string; data: string }[] }[];
       projectContext?: { title: string; description: string; reportTitles: string[] };
       summary?: string;
       linkedNotes?: { id: string; title: string; content: string }[];
       attachmentCache?: Record<string, { name: string; mimeType: string; data: string }>;
+      chatTitle?: string;
     };
 
     // Validate before SSE headers so we can return a plain JSON error
@@ -922,6 +1241,7 @@ export function createServer(port: number, options?: {
     // Build note context map for read_note / edit_note tools
     const noteMap = new Map<string, { id: string; title: string; content: string }>();
     const pendingEdits: { noteId: string; noteTitle: string; oldText: string; newText: string }[] = [];
+    const pendingLogseqAppends: LogseqAppendItem[] = [];
 
     if (linkedNotes && linkedNotes.length > 0) {
       for (const note of linkedNotes) {
@@ -1171,6 +1491,12 @@ export function createServer(port: number, options?: {
               emit({ type: 'tool', tool: 'search_twitter', query: input.query as string });
             } else if (block.name === 'search_youtube') {
               emit({ type: 'tool', tool: 'search_youtube', query: input.query as string });
+            } else if (block.name === 'search_logseq') {
+              emit({ type: 'tool', tool: 'search_logseq', query: input.query as string });
+            } else if (block.name === 'read_logseq_page') {
+              emit({ type: 'tool', tool: 'read_logseq_page', query: input.pageName as string });
+            } else if (block.name === 'append_to_logseq_page') {
+              emit({ type: 'tool', tool: 'append_to_logseq_page', query: input.pageName as string });
             } else if (block.name === 'run_agent') {
               const agentName = input.agent as string;
               const agentConfig = loadedAgents.find((a) => a.name === agentName);
@@ -1208,13 +1534,29 @@ export function createServer(port: number, options?: {
                 (input.duration as string) || 'any',
                 input.publishedAfter as string | undefined,
               );
+            } else if (block.name === 'search_logseq') {
+              result = await executeLogseqSearch(
+                input.query as string,
+                (input.maxResults as number) || 15,
+              );
+            } else if (block.name === 'read_logseq_page') {
+              result = await executeLogseqReadPage(input.pageName as string);
+            } else if (block.name === 'append_to_logseq_page') {
+              result = stageLogseqAppend(
+                input.pageName as string,
+                input.mainPage as string,
+                input.topicSummary as string,
+                input.content as string,
+                (input.tags as string[]) || [],
+                pendingLogseqAppends,
+              );
             } else if (block.name === 'run_agent') {
               const agentName = input.agent as string;
               const agentConfig = loadedAgents.find((a) => a.name === agentName);
               if (!agentConfig) {
                 result = `Error: No agent named "${agentName}" is configured.`;
               } else {
-                result = await runSubAgent(agentConfig, input.task as string, emit);
+                result = await runSubAgent(agentConfig, input.task as string, emit, pendingLogseqAppends, chatTitle || projectContext?.title || 'Lorien');
               }
             } else if (block.name === 'read_note') {
               const note = noteMap.get(input.noteId as string);
@@ -1311,6 +1653,7 @@ export function createServer(port: number, options?: {
           ? { newSummary, summarizedCount }
           : {}),
         ...(pendingEdits.length > 0 ? { pendingEdits } : {}),
+        ...(pendingLogseqAppends.length > 0 ? { pendingLogseqAppends } : {}),
       });
       res.end();
     } catch (err: unknown) {
@@ -1320,6 +1663,48 @@ export function createServer(port: number, options?: {
         : err instanceof Error ? err.message : 'Unknown server error.';
       emit({ type: 'error', message });
       res.end();
+    }
+  });
+
+  // Apply a staged Logseq append to disk (called after user confirms in the UI)
+  app.post('/api/apply-logseq-edit', (req: express.Request, res: express.Response) => {
+    const { filePath, content } = req.body as { filePath?: string; content?: string };
+
+    if (!filePath || typeof filePath !== 'string' || !content || typeof content !== 'string') {
+      res.status(400).json({ error: 'Missing or invalid "filePath" or "content".' });
+      return;
+    }
+
+    // Security: path must be inside the configured vault
+    if (!logseqDir) {
+      res.status(503).json({ error: 'LOGSEQ_DIR not configured.' });
+      return;
+    }
+    const resolvedPath = resolve(filePath);
+    const resolvedVault = resolve(logseqDir);
+    if (!resolvedPath.startsWith(resolvedVault + '/') && resolvedPath !== resolvedVault) {
+      res.status(403).json({ error: 'Path is outside the configured Logseq vault.' });
+      return;
+    }
+
+    try {
+      // Ensure parent directory exists (e.g. journals/ on first run)
+      const parentDir = resolvedPath.substring(0, resolvedPath.lastIndexOf('/'));
+      mkdirSync(parentDir, { recursive: true });
+
+      let existing = '';
+      try { existing = readFileSync(resolvedPath, 'utf-8'); } catch { /* new file — start fresh */ }
+
+      // Append with a blank line separator if the file already has content
+      const sep = existing.length === 0 ? '' : existing.endsWith('\n') ? '\n' : '\n\n';
+      const newContent = existing + sep + content.trim() + '\n';
+
+      writeFileSync(resolvedPath, newContent, 'utf-8');
+      console.log(`[logseq] Appended ${content.length} chars to ${resolvedPath}`);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[logseq] Write failed:', err);
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Write failed.' });
     }
   });
 
@@ -1471,7 +1856,12 @@ if (isDirectExecution) {
     process.exit(1);
   }
 
-  updateKeys(API_KEY, process.env.BRAVE_SEARCH_API_KEY, process.env.APIFY_API_TOKEN);
+  updateKeys(
+    API_KEY,
+    process.env.BRAVE_SEARCH_API_KEY,
+    process.env.APIFY_API_TOKEN,
+    process.env.LOGSEQ_DIR,
+  );
 
   if (!process.env.BRAVE_SEARCH_API_KEY) {
     console.warn(
@@ -1484,9 +1874,18 @@ if (isDirectExecution) {
   if (!process.env.APIFY_API_TOKEN) {
     console.warn(
       '\n  Warning: APIFY_API_TOKEN not set.\n' +
-      '  Twitter/X search will not be available.\n' +
+      '  Twitter/X and YouTube search will not be available.\n' +
       '  Get a token at https://apify.com\n'
     );
+  }
+
+  if (!process.env.LOGSEQ_DIR) {
+    console.warn(
+      '\n  Note: LOGSEQ_DIR not set — Logseq vault search will not be available.\n' +
+      '  Add LOGSEQ_DIR=/path/to/your/vault to .env to enable it.\n'
+    );
+  } else {
+    console.log(`  Logseq vault: ${process.env.LOGSEQ_DIR}`);
   }
 
   const PORT = Number(process.env.PORT) || 3001;

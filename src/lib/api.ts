@@ -99,6 +99,13 @@ export interface NoteEdit {
   newText: string;
 }
 
+export interface LogseqAppend {
+  pageName: string;
+  filePath: string;
+  content: string;
+  pageExists: boolean;
+}
+
 export interface SendChatResult {
   content: string;
   /** Updated summary if old messages were compressed during this request. */
@@ -107,11 +114,13 @@ export interface SendChatResult {
   summarizedCount?: number;
   /** Proposed note edits that require user confirmation before applying. */
   pendingEdits?: NoteEdit[];
+  /** Proposed Logseq appends that require user confirmation before writing to disk. */
+  pendingLogseqAppends?: LogseqAppend[];
 }
 
 export interface ChatToolEvent {
   type: 'tool';
-  tool: 'web_search' | 'read_page' | 'read_note' | 'edit_note' | 'recall_attachment' | 'search_twitter' | 'search_youtube' | 'run_agent';
+  tool: 'web_search' | 'read_page' | 'read_note' | 'edit_note' | 'recall_attachment' | 'search_twitter' | 'search_youtube' | 'search_logseq' | 'read_logseq_page' | 'append_to_logseq_page' | 'run_agent';
   /** Populated when tool === 'web_search' or 'search_twitter' */
   query?: string;
   /** Populated when tool === 'read_page' */
@@ -133,13 +142,14 @@ export async function sendChatMessage(
   onTool?: (event: ChatToolEvent) => void,
   linkedNotes?: LinkedNoteInput[],
   attachmentCache?: Record<string, MessageAttachment>,
+  chatTitle?: string,
 ): Promise<SendChatResult> {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, projectContext, summary, linkedNotes, attachmentCache }),
-    // Chat may run a sub-agent with several searches + page reads before responding
-    signal: AbortSignal.timeout(5 * 60 * 1000),
+    body: JSON.stringify({ messages, projectContext, summary, linkedNotes, attachmentCache, chatTitle }),
+    // Sub-agents can make up to 10 tool calls at ~20–60s each — allow 10 minutes
+    signal: AbortSignal.timeout(10 * 60 * 1000),
   });
 
   if (!response.ok) {
@@ -154,37 +164,61 @@ export async function sendChatMessage(
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    // Keep the last (possibly incomplete) line in the buffer
-    buffer = lines.pop() ?? '';
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      // Keep the last (possibly incomplete) line in the buffer
+      buffer = lines.pop() ?? '';
 
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const json = line.slice(6).trim();
-      if (!json) continue;
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const json = line.slice(6).trim();
+        if (!json) continue;
 
-      let event: { type: string; [key: string]: unknown };
-      try { event = JSON.parse(json); } catch { continue; }
+        let event: { type: string; [key: string]: unknown };
+        try { event = JSON.parse(json); } catch { continue; }
 
-      if (event.type === 'tool' && onTool) {
-        onTool(event as unknown as ChatToolEvent);
-      } else if (event.type === 'response') {
-        return {
-          content: event.content as string,
-          newSummary: event.newSummary as string | undefined,
-          summarizedCount: event.summarizedCount as number | undefined,
-          pendingEdits: event.pendingEdits as NoteEdit[] | undefined,
-        };
-      } else if (event.type === 'error') {
-        throw new Error(event.message as string);
+        if (event.type === 'tool' && onTool) {
+          onTool(event as unknown as ChatToolEvent);
+        } else if (event.type === 'response') {
+          return {
+            content: event.content as string,
+            newSummary: event.newSummary as string | undefined,
+            summarizedCount: event.summarizedCount as number | undefined,
+            pendingEdits: event.pendingEdits as NoteEdit[] | undefined,
+            pendingLogseqAppends: event.pendingLogseqAppends as LogseqAppend[] | undefined,
+          };
+        } else if (event.type === 'error') {
+          throw new Error(event.message as string);
+        }
       }
     }
+  } catch (err) {
+    // AbortSignal.timeout fires as a TimeoutError / AbortError — translate to something readable
+    if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new Error('Request timed out — the agent is taking too long. Try a more specific question or wait a moment and retry.');
+    }
+    throw err;
   }
 
   throw new Error('Stream ended without a response.');
+}
+
+// --- Logseq file writes ---
+
+export async function applyLogseqAppend(filePath: string, content: string): Promise<void> {
+  const response = await fetch('/api/apply-logseq-edit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filePath, content }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || `Server error (${response.status})`);
+  }
 }

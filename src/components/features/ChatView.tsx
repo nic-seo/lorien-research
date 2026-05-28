@@ -3,9 +3,9 @@ import { useParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { useDoc, useProjectDocs, useLinks } from '../../db/hooks';
 import { updateDoc, getDoc, createAttachment, getAttachmentBlob, getAttachmentData, forkChat } from '../../db';
-import { sendChatMessage, generateChatTitle } from '../../lib/api';
+import { sendChatMessage, generateChatTitle, applyLogseqAppend } from '../../lib/api';
 import { usePanelNavigate } from '../../panels/usePanelNavigate';
-import type { ChatToolEvent, LinkedNoteInput, NoteEdit } from '../../lib/api';
+import type { ChatToolEvent, LinkedNoteInput, NoteEdit, LogseqAppend } from '../../lib/api';
 import type { Chat, ChatMessage, Project, Report, Note } from '../../db/types';
 import DocHeader from './DocHeader';
 import { printChat } from '../../lib/printDoc';
@@ -127,6 +127,7 @@ export default function ChatView() {
   // Ref accumulates tool events synchronously so they're readable after sendChatMessage resolves
   const toolTraceAccRef = useRef<ChatToolEvent[]>([]);
   const [pendingEdits, setPendingEdits] = useState<(NoteEdit & { _messageIndex: number; _accepted?: boolean; _rejected?: boolean })[]>([]);
+  const [pendingLogseqAppends, setPendingLogseqAppends] = useState<(LogseqAppend & { _messageIndex: number; _accepted?: boolean; _rejected?: boolean })[]>([]);
   const [savedTraces, setSavedTraces] = useState<Record<number, ChatToolEvent[]>>({});
   const [editingSectionIndex, setEditingSectionIndex] = useState<number | null>(null);
   const [forkHistoryExpanded, setForkHistoryExpanded] = useState(false);
@@ -420,6 +421,7 @@ export default function ChatView() {
         },
         linkedNotes,
         Object.keys(attachmentCache).length > 0 ? attachmentCache : undefined,
+        chat.title,
       );
 
       // Capture the trace synchronously from the ref (state may not have flushed yet)
@@ -454,6 +456,12 @@ export default function ChatView() {
         setPendingEdits((prev) => [
           ...prev,
           ...response.pendingEdits!.map((e) => ({ ...e, _messageIndex: msgIndex })),
+        ]);
+      }
+      if (response.pendingLogseqAppends && response.pendingLogseqAppends.length > 0) {
+        setPendingLogseqAppends((prev) => [
+          ...prev,
+          ...response.pendingLogseqAppends!.map((a) => ({ ...a, _messageIndex: msgIndex })),
         ]);
       }
       if (traceSnapshot) {
@@ -535,6 +543,24 @@ export default function ChatView() {
     ));
   };
 
+  const handleAcceptAppend = async (index: number) => {
+    const append = pendingLogseqAppends[index];
+    try {
+      await applyLogseqAppend(append.filePath, append.content);
+      setPendingLogseqAppends((prev) => prev.map((a, i) =>
+        i === index ? { ...a, _accepted: true } : a
+      ));
+    } catch {
+      setError(`Failed to write to "${append.pageName}". The server may not be running or the vault path may have changed.`);
+    }
+  };
+
+  const handleRejectAppend = (index: number) => {
+    setPendingLogseqAppends((prev) => prev.map((a, i) =>
+      i === index ? { ...a, _rejected: true } : a
+    ));
+  };
+
   if (!chat) return <div className="page-loading">Loading…</div>;
 
   // ---- Message renderer (used for both inherited history and new messages) ----
@@ -569,6 +595,9 @@ export default function ChatView() {
     const editsForMessage = pendingEdits
       .map((e, idx) => ({ ...e, _globalIndex: idx }))
       .filter((e) => e._messageIndex === i && !e._rejected);
+    const appendsForMessage = pendingLogseqAppends
+      .map((a, idx) => ({ ...a, _globalIndex: idx }))
+      .filter((a) => a._messageIndex === i && !a._rejected);
     const trace = savedTraces[i];
 
     return (
@@ -585,6 +614,9 @@ export default function ChatView() {
                     {event.tool === 'web_search' ? '⌕' :
                      event.tool === 'search_twitter' ? '𝕏' :
                      event.tool === 'search_youtube' ? '▶' :
+                     event.tool === 'search_logseq' ? '⌗' :
+                     event.tool === 'read_logseq_page' ? '📝' :
+                     event.tool === 'append_to_logseq_page' ? '✚' :
                      event.tool === 'run_agent' ? '⬡' :
                      event.tool === 'read_note' ? '📖' :
                      event.tool === 'edit_note' ? '✏️' :
@@ -593,7 +625,7 @@ export default function ChatView() {
                   <span className="chat-trace-label">
                     {event.tool === 'run_agent'
                       ? `${event.agentName}${event.task ? ` — ${event.task.slice(0, 60)}${event.task.length > 60 ? '…' : ''}` : ''}`
-                      : event.tool === 'web_search' || event.tool === 'search_twitter' || event.tool === 'search_youtube'
+                      : event.tool === 'web_search' || event.tool === 'search_twitter' || event.tool === 'search_youtube' || event.tool === 'search_logseq' || event.tool === 'read_logseq_page' || event.tool === 'append_to_logseq_page'
                       ? event.query
                       : event.tool === 'read_note' || event.tool === 'edit_note'
                       ? event.noteTitle
@@ -671,6 +703,44 @@ export default function ChatView() {
                         onClick={() => handleRejectEdit(edit._globalIndex)}
                       >
                         Reject
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {appendsForMessage.length > 0 && (
+          <div className="chat-edit-proposals">
+            {appendsForMessage.map((append) => (
+              <div key={append._globalIndex} className={`chat-edit-proposal ${append._accepted ? 'chat-edit-accepted' : ''}`}>
+                <div className="chat-edit-header">
+                  <span className="chat-edit-icon">📝</span>
+                  <span className="chat-edit-title">
+                    Append to {append.pageName}
+                    {!append.pageExists && <span className="chat-edit-badge" style={{ background: 'var(--yellow)', color: 'var(--text-primary)' }}>new page</span>}
+                  </span>
+                  {append._accepted && <span className="chat-edit-badge">Written</span>}
+                </div>
+                {!append._accepted && (
+                  <>
+                    <div className="chat-edit-diff">
+                      <div className="chat-edit-new" style={{ whiteSpace: 'pre-wrap' }}>{append.content}</div>
+                    </div>
+                    <div className="chat-edit-actions">
+                      <button
+                        className="chat-edit-accept"
+                        onClick={() => handleAcceptAppend(append._globalIndex)}
+                      >
+                        Add to notes
+                      </button>
+                      <button
+                        className="chat-edit-reject"
+                        onClick={() => handleRejectAppend(append._globalIndex)}
+                      >
+                        Discard
                       </button>
                     </div>
                   </>
